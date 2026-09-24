@@ -16,7 +16,8 @@ uv run qcm-plotter
   dataset, axes and functions; click a line in the list or on the plot to edit
   it. The swatch beside the list picks its colour.
 - **Layout...**: hover to size the grid, click to apply. Click a panel to select it.
-- **Swap axes**: swaps x and y for every line in the panel.
+- **⇅** (beside the X and Y axis boxes): swaps x and y, functions included, for
+  every line in the panel.
 - **Save figure**: writes to the output folder, named after the plot (e.g.
   `run_005_M006_AH_vs_1-over-Norminal_FIeld.png`) unless you type a name in
   Save as. No extension means `.png`; `.pdf`, `.svg` etc. also work.
