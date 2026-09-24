@@ -14,7 +14,7 @@ delimiter are detected automatically.
    ```
 2. Get the code:
    ```bash
-   git clone https://github.com/<user>/CMP-Plotter.git
+   git clone https://github.com/Quarrinexus/CMP-Plotter.git
    cd CMP-Plotter
    ```
 3. Run it. The first run downloads Python 3.13 and the dependencies into
@@ -34,7 +34,7 @@ In PowerShell:
    ```
 2. Get the code, either with [Git for Windows](https://git-scm.com/download/win):
    ```powershell
-   git clone https://github.com/<user>/CMP-Plotter.git
+   git clone https://github.com/Quarrinexus/CMP-Plotter.git
    cd CMP-Plotter
    ```
    or by downloading the ZIP from GitHub (Code > Download ZIP), extracting
@@ -136,3 +136,7 @@ raw names. See [examples/cmp-plotter.json](examples/cmp-plotter.json).
 - **format**: written by Data format...; lines count from 1, `header_line` 0
   means no column names, `delimiter` is `tab`, `comma`, `semicolon`,
   `whitespace` or the character itself. Leave it out to detect automatically.
+
+## License
+
+MIT; see [LICENSE](LICENSE).

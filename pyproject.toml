@@ -1,8 +1,10 @@
 [project]
 name = "cmp-plotter"
 version = "0.1.0"
-description = "Add your description here"
+description = "A vibe coded tool for creating plots for Condensed Matter Physics"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Alex Quarry", email = "52108977+Quarrinexus@users.noreply.github.com" }
 ]
