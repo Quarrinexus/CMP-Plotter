@@ -99,13 +99,17 @@ isn't found afterwards, run `uv tool update-shell` and open a new terminal.
   peaks), F max, and **Unlink**, which turns it back into an ordinary panel
   with its own copies of the lines. Its title gives the frequency resolution,
   ΔF = 1 / (x range).
-- **Linked axes**: **Link to panel...** then click another panel, and the two
-  start on the same x and y range, covering all their data, which stays in
-  step as their data changes; Home goes back to it. Zooming and panning stay
-  per panel. Each still draws only its own lines. Any number of panels can
-  join: link more to any panel already in the group (linking two groups
-  merges them). The selected panel's linked partners get a dashed frame.
-  **Unlink axes** takes the selected panel out; the rest stay linked.
+- **Linked data**: **Link to panel...** then click another panel, and the
+  selected panel plots the same data as it: the same dataset, X and Y columns
+  and Function boxes, in the same colours, line by line (it takes that
+  panel's number of lines, asking first if some of its own would go). From
+  then on changing any of those in one linked panel, adding or removing a
+  line, or ⇅ does the same in all of them. Smoothing, background and axis
+  ranges stay each panel's own, so e.g. one panel shows the raw data, a linked one the same
+  data with the background subtracted, and another that smoothed. Any number
+  of panels can join (linking two groups merges them); the selected panel's
+  linked partners get a dashed frame. **Unlink panel** takes the selected one
+  out, keeping what it plots.
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own

@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageTk
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
 from cmp_plotter import background, smoothing, spectrum
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import Panel, legend_labels, line_colours, shared
+from cmp_plotter.model import LINKED, Panel, legend_labels, line_colours, shared
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -78,7 +78,7 @@ class Plotter(tk.Tk):
         self.colour_popup = None
         self.picker = None  # the SpanSelector while a fit range is being dragged
         self.fft_pick = None  # source cell while the user clicks a panel for its FFT
-        self.link_pick = None  # cell while the user clicks a panel to link its axes to
+        self.link_pick = None  # cell while the user clicks a panel to link its data to
         self.cache = {}  # id(Line) -> (settings, its x, y and labels), see _line_data
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
@@ -445,30 +445,30 @@ class Plotter(tk.Tk):
         self.fft_window.show = refresh
 
     def _link_box(self, parent):
-        """A collapsed 'Linked axes' toggle: give panels one starting x and y range."""
+        """A collapsed 'Linked data' toggle: panels that plot the same data."""
         def text(is_open):
-            others = self._axes_partners(self.selected)
+            others = self._link_partners(self.selected)
             used = f": panel{'s' if len(others) > 1 else ''} {self._numbers(others)}" \
                 if others and not is_open else ""
-            return f"Linked axes{used}"
+            return f"Linked data{used}"
 
         body = self._collapsible(parent, (10, 0), text)
         status = ttk.Label(body, foreground="#52514e", wraplength=230)
         status.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Button(row, text="Link to panel...", command=self.link_axes).pack(side=tk.LEFT)
-        unlink = ttk.Button(row, text="Unlink axes", command=self.unlink_axes)
+        ttk.Button(row, text="Link to panel...", command=self.link_panels).pack(side=tk.LEFT)
+        unlink = ttk.Button(row, text="Unlink panel", command=self.unlink_panel)
         unlink.pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Label(body, text="linked panels start on one x and y range covering all "
-                             "their data; each zooms and pans on its own",
-                  foreground="#9a9992", wraplength=230).pack(
-            anchor=tk.W)
+        ttk.Label(body, text="linked panels plot the same data (dataset, X, Y and "
+                             "functions) in the same colours, line by line; smoothing, "
+                             "background and ranges are each panel's own",
+                  foreground="#9a9992", wraplength=230).pack(anchor=tk.W)
 
         def refresh():
             body.refresh()
-            others = self._axes_partners(self.selected)
-            status["text"] = (f"x and y linked with panel{'s' if len(others) > 1 else ''} "
+            others = self._link_partners(self.selected)
+            status["text"] = (f"Same data as panel{'s' if len(others) > 1 else ''} "
                               f"{self._numbers(others)}" if others else "Not linked")
             unlink.state(["!disabled" if others else "disabled"])
         self.link_status = refresh
@@ -633,6 +633,7 @@ class Plotter(tk.Tk):
         if (l.x, l.x_fn) != old_x:
             # A window or range in the old x means nothing in the new one.
             l.span = l.fit_from = l.fit_to = None
+        self._sync_inputs(self.selected)
         if l.run in self.datasets and l.run not in self.frames:
             try:
                 self._load(l)
@@ -645,12 +646,13 @@ class Plotter(tk.Tk):
                 pass
         # Same axes: keep the zoom, as smoothing and fits are often tuned zoomed
         # in. A background change moves y by orders of magnitude, so only x.
-        keep = ""
+        keep, others = "", ""
         if before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn):
             keep = "xy" if before[6] == l.fitting else "x"
             if self.panel.source:  # any change reshapes a spectrum
                 keep = "x"
-        self._redraw_selected(keep)
+            others = "x"  # the other panels redrawn plot the same data as before
+        self._redraw_selected(keep, others)
         if l.error:  # a popup rather than text in the controls, to save room
             if l.run in self.frames:  # "Function error: ...", "Smoothing error: ", ...
                 title, _, text = l.error.partition(": ")
@@ -658,20 +660,20 @@ class Plotter(tk.Tk):
                 title, text = "Could not load dataset", l.error
             messagebox.showerror(title, plain(text), parent=self)
 
-    def _redraw_selected(self, keep=""):
-        """Redraw the selected panel and those locked to it, keeping the selected
-        one's x and/or y limits if `keep` says, and the others' x."""
+    def _redraw_selected(self, keep="", others="x"):
+        """Redraw the selected panel and those tied to it (its FFT or data panel,
+        and panels linked to it), keeping the selected one's x and/or y limits
+        if `keep` says and the others' if `others` does."""
         views = {}
-        for cell in self._linked(self.selected):
+        for cell in self._tied(self.selected):
             ax = self.axes[cell]
-            wanted = keep if cell == self.selected else "x"
+            wanted = keep if cell == self.selected else others
             # Only limits the user set (zooming turns autoscaling off); a view
             # that was just fitted to the old data should refit to the new.
             wanted = "".join(a for a in wanted if not getattr(ax, f"get_autoscale{a}_on")())
             views[cell] = wanted, ax.get_xlim(), ax.get_ylim()
-        for cell in views:  # the data panel first: the FFT panels use what it draws
+        for cell in views:  # data panels first: the FFT panels use what they draw
             self._draw_panel(cell)
-        self._fit_groups(views)
         kept = {cell: view for cell, view in views.items() if view[0] and self.axes[cell].lines}
         if kept:
             self.toolbar.push_current()  # the full view, for the toolbar's Home
@@ -695,8 +697,8 @@ class Plotter(tk.Tk):
         self._load_controls()
 
     def _set_selected_line(self, cell, index):
-        """Select line `index` in `cell` and the panels locked to it."""
-        for c in self._linked(cell):
+        """Select line `index` in `cell` and the panels tied to it."""
+        for c in self._tied(cell):
             self.panels[c].selected = index
 
     def _on_line_select(self, _):
@@ -705,19 +707,26 @@ class Plotter(tk.Tk):
             self._select_line(chosen[0])
 
     def add_line(self):
-        """Add a copy of the selected line; it takes the next free colour."""
-        p = self.panel
-        new = p.line.copy()
-        new.colour = None
-        p.lines.insert(p.selected + 1, new)
-        self._set_selected_line(self.selected, p.selected + 1)
+        """Add a copy of the selected line; it takes the next free colour.
+
+        Linked panels get one too, each a copy of its own line there, so it
+        keeps that panel's smoothing, background and so on."""
+        at = self.panel.selected + 1
+        for lines in self._group_lists(self.selected):
+            new = lines[at - 1].copy()
+            new.colour = None
+            lines.insert(at, new)
+        self._set_selected_line(self.selected, at)
         self._redraw_selected()
 
     def remove_line(self):
+        """Remove the selected line, here and in linked panels."""
         p = self.panel
         if len(p.lines) > 1:
-            del p.lines[p.selected]
-            self._set_selected_line(self.selected, min(p.selected, len(p.lines) - 1))
+            at = p.selected
+            for lines in self._group_lists(self.selected):
+                del lines[at]
+            self._set_selected_line(self.selected, min(at, len(p.lines) - 1))
             self._redraw_selected()
 
     # --- drawing ----------------------------------------------------------
@@ -753,11 +762,10 @@ class Plotter(tk.Tk):
         self.fig.clear()
         grid = self.fig.subplots(self.rows, self.cols, squeeze=False)
         self.axes = {(r, c): grid[r, c] for r in range(self.rows) for c in range(self.cols)}
-        self._tidy_axes_groups()
+        self._tidy_link_groups()
         # Data panels first: FFT panels use what their data panel draws.
         for cell in sorted(self.axes, key=lambda c: self.panels[c].source is not None):
             self._draw_panel(cell)
-        self._fit_groups(self.axes)
         self._update_filename()
         self.canvas.draw()
 
@@ -887,9 +895,9 @@ class Plotter(tk.Tk):
             colour, width = PARTNER, 2.0
         else:
             colour, width = "black", 0.8
-        # Dashed: axes linked to the selected panel's (lines not shared).
+        # Dashed: plotting the same data as the selected panel (linked data).
         dashed = (colour == "black" and self.selected in self.panels
-                  and cell in self._axes_partners(self.selected))
+                  and cell in self._link_partners(self.selected))
         if dashed:
             colour, width = PARTNER, 2.0
         for spine in self.axes[cell].spines.values():
@@ -909,7 +917,7 @@ class Plotter(tk.Tk):
         if self.fft_pick is not None:  # the click chooses where an FFT goes
             self._put_fft(self.fft_pick, cell)
             return
-        if self.link_pick is not None:  # the click chooses whose axes to link to
+        if self.link_pick is not None:  # the click chooses whose data to link to
             self._link(self.link_pick, cell)
             return
         old, self.selected = self.selected, cell
@@ -949,7 +957,8 @@ class Plotter(tk.Tk):
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
             l.span = l.fit_from = l.fit_to = None  # in the old x; meaningless now
-        self._redraw_selected()
+        self._sync_inputs(self.selected)
+        self._redraw_selected(others="")
 
     # --- FFT panels -------------------------------------------------------
 
@@ -1054,92 +1063,116 @@ class Plotter(tk.Tk):
             self._build_axes()
             self._load_controls()
 
-    # --- linked axes ------------------------------------------------------
+    # --- linked data ------------------------------------------------------
 
-    def _axes_groups(self):
-        """Lists of cells whose axes are linked, each in grid order."""
+    def _link_groups(self):
+        """Lists of cells whose panels plot the same data, each in grid order."""
         groups = {}
         for cell in sorted(self.panels):
-            if self.panels[cell].axes_group is not None:
-                groups.setdefault(self.panels[cell].axes_group, []).append(cell)
+            if self.panels[cell].link_group is not None:
+                groups.setdefault(self.panels[cell].link_group, []).append(cell)
         return list(groups.values())
 
-    def _axes_partners(self, cell):
-        """The other cells whose axes are linked with `cell`'s."""
-        if cell not in self.panels or self.panels[cell].axes_group is None:
+    def _link_partners(self, cell):
+        """The other cells whose panels plot the same data as `cell`'s."""
+        if cell not in self.panels or self.panels[cell].link_group is None:
             return []
-        group = self.panels[cell].axes_group
+        group = self.panels[cell].link_group
         return [c for c in sorted(self.panels)
-                if c != cell and self.panels[c].axes_group == group]
+                if c != cell and self.panels[c].link_group == group]
 
-    def _fit_groups(self, cells):
-        """Give each linked-axes group with a panel in `cells` a starting range
-        covering all its members' data.
+    def _tied(self, cell):
+        """Every panel a change to `cell`'s lines shows in: the panels linked to it
+        and the FFT or data panels locked to each, data panels first."""
+        tied = []
+        for c in [cell, *self._link_partners(cell)]:
+            tied += [t for t in self._linked(c) if t not in tied]
+        return sorted(tied, key=lambda c: self.panels[c].source is not None)
 
-        The group's extent is added to each member's data limits, so it's what
-        autoscaling and Home go to, while a member the user has zoomed or
-        panned keeps its view: zooming one panel doesn't move the others."""
-        done = set()
-        for cell in cells:
-            if cell in done or not self._axes_partners(cell):
-                continue
-            members = [cell, *self._axes_partners(cell)]
-            done.update(members)
-            drawn = [self.axes[c] for c in members if self.axes[c].lines]
-            for ax in drawn:
-                ax.relim()  # its own data only, dropping the group's old extent
-            corners = np.array([ax.dataLim.get_points() for ax in drawn
-                                if np.isfinite(ax.dataLim.get_points()).all()])
-            if not len(corners):
-                continue
-            extent = [corners[:, 0].min(axis=0), corners[:, 1].max(axis=0)]
-            for ax in drawn:
-                ax.update_datalim(extent)
-                ax.autoscale_view()
+    def _group_lists(self, cell):
+        """The distinct lists of lines in `cell`'s linked group, `cell`'s first
+        (an FFT panel shares its data panel's list)."""
+        lists = []
+        for c in [cell, *self._link_partners(cell)]:
+            if not any(self.panels[c].lines is lines for lines in lists):
+                lists.append(self.panels[c].lines)
+        return lists
 
-    def _tidy_axes_groups(self):
+    def _sync_inputs(self, cell):
+        """Give the linked panels' lines the same data input and colour as
+        `cell`'s, line by line."""
+        source, *others = self._group_lists(cell)
+        for lines in others:
+            for mine, theirs in zip(lines, source):
+                if (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
+                    mine.span = mine.fit_from = mine.fit_to = None  # in the old x
+                for attr in LINKED:
+                    setattr(mine, attr, getattr(theirs, attr))
+
+    def _tidy_link_groups(self):
         """Drop groups left with one panel (after an unlink or a smaller layout)."""
-        for group in self._axes_groups():
+        for group in self._link_groups():
             if len(group) == 1:
-                self.panels[group[0]].axes_group = None
+                self.panels[group[0]].link_group = None
 
     def _numbers(self, cells):
         """'2, 3 and 5' for those panels."""
         numbers = [str(self._number(c)) for c in cells]
         return numbers[0] if len(numbers) == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
 
-    def link_axes(self):
-        """Wait for a click on the panel whose axes the selected one should share."""
+    def link_panels(self):
+        """Wait for a click on the panel whose data the selected one should plot."""
         self.stop_picking()
         if len(self.panels) == 1:
             self._say("There's only one panel; choose a bigger Layout first.", error=True)
             return
         self.link_pick = self.selected
-        self._say("Click the panel to link this one's axes to; Esc cancels.")
+        self._say("Click the panel to plot the same data as; Esc cancels.")
 
     def _link(self, cell, target):
-        """Link the axes of `cell` and `target`, joining any groups they're in."""
+        """Link `cell` (and any group it's in) to `target`'s data.
+
+        `cell`'s side takes `target`'s data input, colours and number of
+        lines; each keeps its own smoothing and background."""
         self.stop_picking()
         if target == cell:
             self._say("Click a different panel to link to.", error=True)
             return
-        mine, theirs = self.panels[cell].axes_group, self.panels[target].axes_group
+        mine, theirs = self.panels[cell].link_group, self.panels[target].link_group
         if mine is not None and mine == theirs:
             self._say("Those panels are already linked.")
             return
+        source = self.panels[target].lines
+        followers = [lines for lines in self._group_lists(cell) if lines is not source]
+        extra = sum(max(0, len(lines) - len(source)) for lines in followers)
+        if extra and not messagebox.askyesno(
+                "Link panels?",
+                f"Panel {self._number(target)} has {len(source)} line"
+                f"{'s' if len(source) > 1 else ''}, so {extra} of panel "
+                f"{self._number(cell)}'s will be removed. Link anyway?", parent=self):
+            return
         group = next((g for g in (theirs, mine) if g is not None),
-                     max((p.axes_group or 0 for p in self.panels.values()), default=0) + 1)
+                     max((p.link_group or 0 for p in self.panels.values()), default=0) + 1)
         for c, p in self.panels.items():  # merge both groups, or start one
-            if c in (cell, target) or (p.axes_group is not None and p.axes_group in (mine, theirs)):
-                p.axes_group = group
+            if c in (cell, target) or (p.link_group is not None and p.link_group in (mine, theirs)):
+                p.link_group = group
+        for lines in followers:  # same number of lines as the target's
+            del lines[len(source):]
+            while len(lines) < len(source):
+                new = source[len(lines)].copy()
+                new.colour = None
+                lines.append(new)
+        self._sync_inputs(target)
+        for p in self.panels.values():
+            p.selected = min(p.selected, len(p.lines) - 1)
         self._build_axes()
         self._load_controls()
 
-    def unlink_axes(self):
-        """Take the selected panel out of its linked-axes group; the rest stay linked."""
+    def unlink_panel(self):
+        """Take the selected panel out of its linked group; it keeps its lines."""
         self.stop_picking()
-        if self.panel.axes_group is not None:
-            self.panel.axes_group = None
+        if self.panel.link_group is not None:
+            self.panel.link_group = None
             self._build_axes()
             self._load_controls()
 
@@ -1199,7 +1232,7 @@ class Plotter(tk.Tk):
         self.swatch["background"] = colours[p.selected]
         for i, colour in enumerate(colours):
             self.line_list.itemconfigure(i, foreground=colour, selectforeground=colour)
-        for cell in self._linked(self.selected):  # locked panels share the lines
+        for cell in self._tied(self.selected):  # locked and linked panels: same colours
             for artist, i in self.artists.get(cell, {}).items():
                 artist.set_color(colours[i])
             ax = self.axes.get(cell)
@@ -1221,11 +1254,13 @@ class Plotter(tk.Tk):
 
     def pick_colour(self, colour):
         self.panel.line.colour = colour
+        self._sync_inputs(self.selected)
         # The picker already shows it; moving it would round-trip through hex.
         self._show_colour(move_picker=False)
 
     def reset_colour(self):
         self.panel.line.colour = None
+        self._sync_inputs(self.selected)
         self._show_colour()
 
     # --- status and saving ------------------------------------------------

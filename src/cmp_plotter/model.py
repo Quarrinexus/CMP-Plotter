@@ -11,6 +11,9 @@ from cmp_plotter.datasets import describe
 from cmp_plotter.background import describe as describe_background
 from cmp_plotter.smoothing import describe as describe_smoothing
 
+# What linked panels share, line by line: the data input, and the colour.
+LINKED = ("run", "x", "x_fn", "y", "y_fn", "colour")
+
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 
 # Colours for extra lines once a panel's sample colours are taken.
@@ -74,7 +77,7 @@ class Panel:
     window: str = "hann"  # FFT window, a key of spectrum.WINDOWS
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
-    axes_group: int | None = None  # panels with the same number share x and y limits
+    link_group: int | None = None  # panels with the same number plot the same data
 
     @property
     def line(self):

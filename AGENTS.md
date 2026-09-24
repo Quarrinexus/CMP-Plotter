@@ -82,16 +82,22 @@ colours, added and removed lines all show in both with no copying. So:
   always makes an independent data panel.
 - There are no FFTs of FFT panels, and no fit-range picking on them.
 
-## Linked axes are a different link
+## Linked data is a different link
 
-`Panel.axes_group` puts panels in a group that starts on one x and y range
-covering all their data. Unlike FFT panels, they don't share lines, and
-zooming or panning one doesn't move the others, so this is deliberately not
-matplotlib's `sharex`/`sharey`. After drawing, `_fit_groups` adds the
-group's extent to each member's data limits and autoscales: the shared range
-is then simply what autoscaling and Home give, and a member the user has
-zoomed (autoscale off) keeps its view. Call it after any redraw that can
-change a member's data; `_build_axes` and `_redraw_selected` do.
+`Panel.link_group` puts panels in a group that plots the same data: each
+line's `LINKED` settings (`model.py`: run, x, x_fn, y, y_fn, colour) match
+line by line, and the panels have the same number of lines. Unlike FFT panels
+they have their own `Line` objects, so smoothing and background stay per panel, and
+axis ranges and zoom are each panel's own. So:
+
+- After changing a line's inputs or colour, call `_sync_inputs(cell)`, which
+  copies them to the group (clearing a member's x-unit settings if its x
+  changes); `apply_controls`, `swap` and the colour picker do. Add and remove lines through `add_line` /
+  `remove_line`, which do it in every list in `_group_lists`.
+- `_tied(cell)` is every panel a change shows in: the group plus each
+  member's FFT or data panel. `_redraw_selected` redraws those.
+- A group's FFT panel shares one member's list, so `_group_lists`
+  deduplicates by identity: never replace a list, only change it in place.
 
 ## Things that look odd but are deliberate
 
