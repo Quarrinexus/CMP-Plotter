@@ -40,6 +40,9 @@ class Plotter(tk.Tk):
         self.line_list = tk.Listbox(lines, height=4, width=24, exportselection=False,
                                     activestyle="none")
         self.line_list.pack(side=tk.LEFT)
+        line_scroll = ttk.Scrollbar(lines, orient=tk.VERTICAL, command=self.line_list.yview)
+        line_scroll.pack(side=tk.LEFT, fill=tk.Y)
+        self.line_list["yscrollcommand"] = line_scroll.set
         self.line_list.bind("<<ListboxSelect>>", self._on_line_select)
         line_buttons = ttk.Frame(lines)
         line_buttons.pack(side=tk.LEFT, padx=(6, 0), fill=tk.Y)
