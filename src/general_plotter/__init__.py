@@ -1,2 +1,4 @@
 def main() -> None:
-    print("Hello from general-plotter!")
+    from general_plotter.plotter import Plotter
+
+    Plotter().mainloop()
