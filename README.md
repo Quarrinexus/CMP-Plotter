@@ -6,6 +6,8 @@ delimiter are detected automatically.
 
 ## Install
 
+### Linux and macOS
+
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -21,19 +23,46 @@ delimiter are detected automatically.
    uv run cmp-plotter
    ```
 
-To get a `cmp-plotter` command that works from any folder instead:
+### Windows
+
+In PowerShell:
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/),
+   then close and reopen PowerShell so the `uv` command is found:
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+2. Get the code, either with [Git for Windows](https://git-scm.com/download/win):
+   ```powershell
+   git clone https://github.com/<user>/CMP-Plotter.git
+   cd CMP-Plotter
+   ```
+   or by downloading the ZIP from GitHub (Code > Download ZIP), extracting
+   it, and running `cd` into the extracted folder.
+3. Run it. As on Linux, the first run downloads Python 3.13 (Tk included)
+   and the dependencies; later runs start straight away.
+   ```powershell
+   uv run cmp-plotter
+   ```
+
+Settings are kept in `C:\Users\<you>\.config\cmp-plotter\settings.json`.
+
+### A command that works from any folder
+
+On any system, instead of `uv run` from the project folder:
 
 ```bash
 uv tool install .
 ```
 
 After pulling changes, update it with `uv tool install --reinstall .`;
-`uv tool uninstall cmp-plotter` removes it.
+`uv tool uninstall cmp-plotter` removes it. If the `cmp-plotter` command
+isn't found afterwards, run `uv tool update-shell` and open a new terminal.
 
 ## Use
 
 - **Data / Output folder** (under Folders): choose with Browse...; both are
-  remembered in `~/.config/cmp-plotter/settings.json`.
+  remembered in `~/.config/cmp-plotter/settings.json` (see Windows above).
 - **Data format...** (under Folders): set the delimiter, column-name line and
   first data line by hand, with a preview. Opens by itself when a file's layout
   can't be detected. Saved for the whole data folder in its profile.
