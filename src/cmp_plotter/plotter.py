@@ -9,6 +9,7 @@ from matplotlib.figure import Figure
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
+from cmp_plotter import smoothing
 from cmp_plotter.columns import label, with_unit, without_unit
 from cmp_plotter.model import Panel, legend_labels, line_colours, shared
 from cmp_plotter.profile import load_profile, save_format
@@ -99,6 +100,7 @@ class Plotter(tk.Tk):
         self.swap_icon = swap_icon()
         ttk.Button(axes, image=self.swap_icon, command=self.swap).pack(
             side=tk.LEFT, padx=(6, 0))
+        self._smoothing_box(controls)
 
         # Saving sits at the bottom of the column.
         save = ttk.Frame(controls)
@@ -200,6 +202,80 @@ class Plotter(tk.Tk):
         var.show_label = body.refresh
         return var
 
+    def _smoothing_box(self, parent):
+        """A collapsed 'Smoothing' toggle: method, window and (for SG) order."""
+        self.smooth = tk.StringVar(value=smoothing.METHODS[""])
+        self.window, self.order = tk.StringVar(value="21"), tk.StringVar(value="2")
+        self.window_unit = tk.StringVar(value=smoothing.UNITS[False])
+
+        def text(is_open):
+            l = self.panel.line
+            used = f": {smoothing.describe(*l.smoothing)}" if l.smoothing and not is_open else ""
+            return f"Smoothing{used}"
+
+        body = self._collapsible(parent, (10, 0), text)
+        method = ttk.Combobox(body, textvariable=self.smooth, state="readonly", width=24,
+                              values=list(smoothing.METHODS.values()))
+        method.pack(anchor=tk.W, pady=(2, 0))
+        method.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        sizes = ttk.Frame(body)
+        sizes.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(sizes, text="Window").pack(side=tk.LEFT)
+        window = ttk.Spinbox(sizes, textvariable=self.window, from_=3, to=100001,
+                             increment=2, width=6, command=self.apply_controls)
+        window.pack(side=tk.LEFT, padx=(4, 6))
+        unit = ttk.Combobox(sizes, textvariable=self.window_unit, state="readonly", width=7,
+                            values=list(smoothing.UNITS.values()))
+        unit.pack(side=tk.LEFT)
+        unit.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        orders = ttk.Frame(body)
+        ttk.Label(orders, text="Order").pack(side=tk.LEFT)
+        order = ttk.Spinbox(orders, textvariable=self.order, from_=0, to=10, width=3,
+                            command=self.apply_controls)
+        order.pack(side=tk.LEFT, padx=(4, 0))
+        hint = ttk.Label(body, foreground="#9a9992", wraplength=230)
+        hint.pack(anchor=tk.W)
+        for box in (window, order):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_controls())
+
+        def step(direction):
+            """Arrows on the window: 1-2-5 steps in x; odd numbers only for SG."""
+            if self.window_unit.get() == smoothing.UNITS[True]:
+                try:
+                    span = float(self.window.get())
+                except ValueError:
+                    span = self.panel.line.span
+                if span and span > 0:
+                    self.window.set(f"{smoothing.step_nice(span, direction):g}")
+                    self.apply_controls()
+                return "break"
+            if self.smooth.get() != smoothing.METHODS["savgol"]:
+                return None  # Tk's own stepping
+            try:
+                n, order = int(self.window.get()), int(self.order.get())
+            except ValueError:
+                n, order = self.panel.line.window, self.panel.line.order
+            # From an odd number to the next odd one; from an even one to the odd beside it.
+            n += 2 * direction if n % 2 else direction
+            # No lower than the smallest odd window the order allows (order < window - 1).
+            self.window.set(max(n, 3, order + 2 if order % 2 else order + 3))
+            self.apply_controls()
+            return "break"
+        window.bind("<<Increment>>", lambda _: step(1))
+        window.bind("<<Decrement>>", lambda _: step(-1))
+
+        def refresh():
+            body.refresh()
+            # Order only means something for Savitzky–Golay.
+            if self.panel.line.smooth == "savgol":
+                orders.pack(anchor=tk.W, pady=(4, 0), after=sizes)
+            else:
+                orders.pack_forget()
+            hint["text"] = ("of the plotted x, e.g. in 1/B with a 1/x function"
+                            if self.panel.line.in_x else "points, in the order they were taken")
+        self.smooth.show = refresh
+
     def _folder_row(self, parent, label, key):
         """'Data folder' etc.: the chosen path, with Browse... to change it."""
         ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(0, 2))
@@ -297,6 +373,11 @@ class Plotter(tk.Tk):
         self.y_fn.set(l.y_fn)
         self.x_fn.show_label()
         self.y_fn.show_label()
+        self.smooth.set(smoothing.METHODS[l.smooth])
+        self.window_unit.set(smoothing.UNITS[l.in_x])
+        self.window.set((f"{l.span:g}" if l.span is not None else "") if l.in_x else l.window)
+        self.order.set(l.order)
+        self.smooth.show()
         self._say("")  # errors pop up instead; see apply_controls
         self._show_colour()
 
@@ -305,6 +386,8 @@ class Plotter(tk.Tk):
         self.line_list.delete(0, tk.END)
         for l, colour in zip(p.lines, colours):
             name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
+            if l.smoothing:
+                name += f" · {smoothing.describe(*l.smoothing)}"
             self.line_list.insert(tk.END, name)
             self.line_list.itemconfigure(tk.END, foreground=colour,
                                          selectforeground=colour)
@@ -315,9 +398,22 @@ class Plotter(tk.Tk):
     def apply_controls(self):
         """Copy the controls into the selected line and redraw its panel."""
         l = self.panel.line
+        before, old_x = l.shown, (l.x, l.x_fn)
         l.run = self.run.get()
         l.x, l.y = without_unit(self.x.get()) or l.x, without_unit(self.y.get()) or l.y
         l.x_fn, l.y_fn = self.x_fn.get().strip(), self.y_fn.get().strip()
+        l.smooth = next(k for k, v in smoothing.METHODS.items() if v == self.smooth.get())
+        was_in_x, l.in_x = l.in_x, self.window_unit.get() == smoothing.UNITS[True]
+        # The box holds the window in the units it was showing; the other is kept.
+        fields = (("span" if was_in_x else "window", self.window, float if was_in_x else int),
+                  ("order", self.order, int))
+        for attr, var, kind in fields:
+            try:
+                setattr(l, attr, kind(var.get()))
+            except ValueError:  # not a number: keep the old one (shown again below)
+                pass
+        if (l.x, l.x_fn) != old_x:
+            l.span = None  # a window in the old x means nothing in the new one
         if l.run in self.datasets and l.run not in self.frames:
             try:
                 self._load(l)
@@ -328,13 +424,25 @@ class Plotter(tk.Tk):
                     return
             except Exception:  # anything else is reported by the redraw below
                 pass
-        self._redraw_selected()
+        # Only the smoothing changed: keep the zoom, as it's often tuned zoomed in.
+        same = before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn)
+        self._redraw_selected(keep_view=same)
         if l.error:  # a popup rather than text in the controls, to save room
-            title = "Function error" if l.run in self.frames else "Could not load dataset"
-            messagebox.showerror(title, l.error.removeprefix("Function error: "), parent=self)
+            if l.run in self.frames:  # "Function error: ..." or "Smoothing error: ..."
+                title, _, text = l.error.partition(": ")
+            else:
+                title, text = "Could not load dataset", l.error
+            messagebox.showerror(title, text, parent=self)
 
-    def _redraw_selected(self):
+    def _redraw_selected(self, keep_view=False):
+        ax = self.axes[self.selected]
+        view = ax.get_xlim(), ax.get_ylim()
         self._draw_panel(self.selected)
+        if keep_view and ax.lines:
+            self.toolbar.push_current()  # the full view, for the toolbar's Home
+            ax.set_xlim(view[0])
+            ax.set_ylim(view[1])
+            self.toolbar.push_current()
         self._load_controls()  # loading a run can change the axis choices
         self._update_filename()
         self.canvas.draw()
@@ -413,17 +521,23 @@ class Plotter(tk.Tk):
             l.shown, l.error = None, ""
             if not l.run:
                 continue
+            stage = "Function"
             try:
                 df = self._load(l)
                 x, x_label = self._axis(df, l.x, l.x_fn)
                 y, y_label = self._axis(df, l.y, l.y_fn)
+                stage = "Smoothing"  # after the function: smooth what's plotted
+                if l.smooth and l.in_x and l.span is None:
+                    l.span = smoothing.span_for(x, l.window)
+                if l.smoothing:
+                    y = smoothing.smooth(x, y, *l.smoothing)
             except Exception as err:  # bad file or function shouldn't kill the window
-                l.error = f"Function error: {err}" if l.run in self.frames else str(err)
+                l.error = f"{stage} error: {err}" if l.run in self.frames else str(err)
                 errors.append(l.error)
                 continue
             # What's on screen, so Save names the plot shown rather than
             # whatever is typed but not yet applied.
-            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn)
+            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing)
             (artist,) = ax.plot(x, y, lw=0.7, color=colour)
             self.artists[cell][artist] = i
             drawn.append(l)
@@ -501,6 +615,7 @@ class Plotter(tk.Tk):
         for l in self.panel.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
+            l.span = None  # re-estimated for the new x when drawn
         self._redraw_selected()
 
     # --- colour -----------------------------------------------------------
@@ -550,8 +665,9 @@ class Plotter(tk.Tk):
         first = self.panels[0, 0].lines[0]
         if not first.shown:
             return ""
-        run, y, x = first.parts()
-        return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}.png"
+        run, y, x, smoothed = first.parts()
+        tail = f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
+        return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}{tail}.png"
 
     def _update_filename(self):
         """Put the default name in the Save as box, unless the user typed one."""

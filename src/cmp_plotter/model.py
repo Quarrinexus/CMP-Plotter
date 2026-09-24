@@ -8,6 +8,7 @@ import numpy as np
 from cmp_plotter.axis_functions import file_part
 from cmp_plotter.columns import sample_of
 from cmp_plotter.datasets import describe
+from cmp_plotter.smoothing import describe as describe_smoothing
 
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 
@@ -24,17 +25,29 @@ class Line:
     x_fn: str = "x"
     y: str = ""
     y_fn: str = "y"
+    smooth: str = ""  # a key of smoothing.METHODS; "" for none
+    window: int = 21  # smoothing window, in points
+    in_x: bool = False  # window counted in the plotted x (span) instead of points
+    span: float | None = None  # window in x; None: estimated from `window` when drawn
+    order: int = 2  # Savitzky–Golay polynomial order
     colour: str | None = None  # None: picked automatically, see line_colours
-    shown: tuple | None = None  # (run, x, x_fn, y, y_fn) as last drawn
+    shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing) as last drawn
     error: str = ""  # why the last draw failed, if it did
 
     def copy(self):
         return replace(self, shown=None, error="")
 
+    @property
+    def smoothing(self):
+        """(method, window or span, order, in_x), or None when unsmoothed."""
+        if not self.smooth:
+            return None
+        return (self.smooth, self.span if self.in_x else self.window, self.order, self.in_x)
+
     def parts(self):
-        """(run, y part, x part) as they'd appear in a filename."""
-        run, x, x_fn, y, y_fn = self.shown
-        return run, file_part(y_fn, y), file_part(x_fn, x)
+        """(run, y part, x part, smoothing) as they'd appear in a filename."""
+        run, x, x_fn, y, y_fn, smoothed = self.shown
+        return run, file_part(y_fn, y), file_part(x_fn, x), smoothed
 
 
 @dataclass
@@ -76,16 +89,18 @@ def line_colours(panel, samples):
 def legend_labels(lines):
     """Legend text naming only what differs between the lines."""
     parts = [l.parts() for l in lines]
-    differs = [len({p[i] for p in parts}) > 1 for i in range(3)]
-    if not any(differs):
-        differs[1] = True  # identical lines: say what's on y
+    differs = [len({p[i] for p in parts}) > 1 for i in range(4)]
+    if not any(differs[:3]):
+        differs[1] = True  # identical, or only smoothed differently: say what's on y
     labels = []
-    for run, y, x in parts:
+    for run, y, x, smoothed in parts:
         bits = [describe(run)] if differs[0] else []
         if differs[1]:
             bits.append(y)
         if differs[2]:
             bits.append(f"vs {x}")
+        if differs[3] and smoothed:
+            bits.append(describe_smoothing(*smoothed))
         labels.append(" · ".join(bits))
     return labels
 

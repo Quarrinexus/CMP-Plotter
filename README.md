@@ -41,6 +41,15 @@ After pulling changes, update it with `uv tool install --reinstall .`;
   (`M006_AH`, `M011_AH_Loss`, ...) included. Changing a control redraws.
 - **Function**: under each axis, e.g. `1/x`, `exp(y)`, `log10(x)`; numpy's usual
   functions plus `pi` and `e`. Enter applies.
+- **Smoothing**: per line, under the axes. Moving average, median or
+  Savitzky–Golay (with its polynomial order) over a window of points, taken in
+  the order they were recorded; SG needs an odd window. Or set the window in
+  **x units**: the plotted x, so with a `1/x` function on the field the window
+  is in 1/B. Each point then uses the unbroken run of rows around it whose x is
+  within half the window of its own, so separate sweeps aren't mixed, and SG
+  becomes a polynomial fit in x, right for unevenly spaced points. It applies
+  to the plotted y, after its function. To see raw and smoothed together, copy the
+  line with + and smooth the copy; the legend tells them apart.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it. The swatch beside the list picks its colour.
