@@ -38,9 +38,20 @@ def load_profile(data_dir):
         for key, kind in kinds.items():
             if not isinstance(data.get(key), kind) and key in data:
                 raise ValueError(f"'{key}' has the wrong type")
-        return Profile(**{k: data[k] for k in kinds if k in data}), ""
+        profile = Profile(**{k: data[k] for k in kinds if k in data})
     except (OSError, ValueError) as err:  # json errors are ValueErrors
         return Profile(), f"{PROFILE_NAME} ignored: {err}"
+    if profile.format is not None and not _valid_format(profile.format):
+        profile.format = None  # keep the rest of the profile
+        return profile, f"{PROFILE_NAME}: 'format' ignored, see README"
+    return profile, ""
+
+
+def _valid_format(fmt):
+    def whole(value, least):
+        return type(value) is int and value >= least
+    return (isinstance(fmt.get("delimiter"), str) and fmt["delimiter"] != ""
+            and whole(fmt.get("header_line"), 0) and whole(fmt.get("data_line"), 1))
 
 
 def save_format(data_dir, fmt):

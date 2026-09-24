@@ -326,6 +326,8 @@ class Plotter(tk.Tk):
                 if l.run not in self.frames:  # still unreadable; don't pop up again
                     self._redraw_selected()
                     return
+            except Exception:  # anything else is reported by the redraw below
+                pass
         self._redraw_selected()
         if l.error:  # a popup rather than text in the controls, to save room
             title = "Function error" if l.run in self.frames else "Could not load dataset"

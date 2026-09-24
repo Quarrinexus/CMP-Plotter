@@ -62,8 +62,7 @@ raw names. See [examples/qcm-plotter.json](examples/qcm-plotter.json).
   "labels":   {"Norminal_FIeld": "$B$  (T)", "AH": "capacitance (bridge units)"},
   "units":    {"Norminal_FIeld": "T", "AH": "bridge units"},
   "samples":  {"M006": "#2a78d6", "M011": "#eb6834"},
-  "defaults": {"x": "Norminal_FIeld", "y": "M006_AH"},
-  "format":   {"delimiter": "tab", "header_line": 8, "data_line": 9}
+  "defaults": {"x": "Norminal_FIeld", "y": "M006_AH"}
 }
 ```
 

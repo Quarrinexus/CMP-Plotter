@@ -125,6 +125,8 @@ def parse(lines, fmt):
                               f"line {start + 1} has {width} values")
         if len(set(names)) != width:
             raise FormatError(f"line {header + 1} repeats a column name")
+        if all(map(_is_number, names)):
+            raise FormatError(f"line {header + 1} is data, not column names")
     else:
         names = [f"column_{i + 1}" for i in range(width)]
     try:
@@ -139,6 +141,16 @@ def parse(lines, fmt):
 
 
 def load_dataset(path, fmt=None):
-    """Read a data file into a DataFrame with `fmt`, or a detected format if None."""
+    """Read a data file into a DataFrame with `fmt`, detecting the format if that fails."""
     lines = read_lines(path)
-    return parse(lines, fmt or detect_format(lines))
+    if fmt:
+        try:
+            return parse(lines, fmt)
+        except FormatError as err:  # e.g. a file with a longer preamble
+            saved_error = err
+    try:
+        return parse(lines, detect_format(lines))
+    except FormatError:
+        if fmt:
+            raise saved_error from None
+        raise
