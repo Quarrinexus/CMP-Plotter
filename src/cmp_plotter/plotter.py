@@ -20,6 +20,14 @@ from cmp_plotter.format_dialog import FormatDialog
 from cmp_plotter.settings import load_settings, save_settings
 from cmp_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
 
+# Tk's X core fonts show these as '®' or the wrong symbol, though matplotlib
+# draws them fine; plain() swaps them for ASCII in text Tk shows.
+PLAIN = str.maketrans({"\u2212": "-", "\u2013": "-", "\u0394": "d", "\u2192": "->"})
+
+
+def plain(text):
+    return text.translate(PLAIN)
+
 
 def title(names):
     """Panel title: 'run 005, 003', or the dataset names if they aren't runs."""
@@ -250,7 +258,7 @@ class Plotter(tk.Tk):
 
         def text(is_open):
             l = self.panel.line
-            used = f": {smoothing.describe(*l.smoothing)}" if l.smoothing and not is_open else ""
+            used = f": {plain(smoothing.describe(*l.smoothing))}" if l.smoothing and not is_open else ""
             return f"Smoothing{used}"
 
         body = self._collapsible(parent, (10, 0), text)
@@ -325,7 +333,8 @@ class Plotter(tk.Tk):
         def text(is_open):
             fitted = self.panel.line.fitting
             # Without the range, which would widen the column.
-            used = f": {background.describe(*fitted[:2], None, None)}" if fitted and not is_open else ""
+            used = (f": {plain(background.describe(*fitted[:2], None, None))}"
+                    if fitted and not is_open else "")
             return f"Background{used}"
 
         body = self._collapsible(parent, (10, 0), text)
@@ -473,9 +482,9 @@ class Plotter(tk.Tk):
         for l, colour in zip(p.lines, colours):
             name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
             if l.smoothing:
-                name += f" · {smoothing.describe(*l.smoothing)}"
+                name += f" · {plain(smoothing.describe(*l.smoothing))}"
             if l.fitting:
-                name += f" · {background.describe(*l.fitting)}"
+                name += f" · {plain(background.describe(*l.fitting))}"
             self.line_list.insert(tk.END, name)
             self.line_list.itemconfigure(tk.END, foreground=colour,
                                          selectforeground=colour)
@@ -535,7 +544,7 @@ class Plotter(tk.Tk):
                 title, _, text = l.error.partition(": ")
             else:
                 title, text = "Could not load dataset", l.error
-            messagebox.showerror(title, text, parent=self)
+            messagebox.showerror(title, plain(text), parent=self)
 
     def _redraw_selected(self, keep=""):
         """Redraw the selected panel, keeping its x and/or y limits if `keep` says."""

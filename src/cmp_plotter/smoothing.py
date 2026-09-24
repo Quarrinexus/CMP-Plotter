@@ -7,7 +7,7 @@ import pandas as pd
 
 # Method stored on a Line -> name shown in the Smoothing box. "" is no smoothing.
 METHODS = {"": "None", "mean": "Moving average", "median": "Median",
-           "savgol": "Savitzky–Golay"}
+           "savgol": "Savitzky-Golay"}  # ASCII: Tk's core fonts garble an en dash
 
 # What the window is counted in: points (rows) or units of the plotted x.
 UNITS = {False: "points", True: "x units"}

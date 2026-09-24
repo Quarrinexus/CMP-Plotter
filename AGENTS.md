@@ -68,7 +68,11 @@ Keep that order. Things that depend on it:
   `scipy.signal.savgol_filter` to rounding error); `background.fit` uses
   `numpy.polynomial.Chebyshev.fit` so high degrees stay well conditioned.
 - **Drawn icons and triangles**, not Unicode arrows: Tk's X core fonts can
-  show them as '®'.
+  show them as '®'. The same goes for text: in Tk widgets − (minus), – (en
+  dash) and → show as '®' and Δ as '∈'. matplotlib draws them fine, so plot
+  text keeps them and anything Tk shows goes through `plain()` in
+  `plotter.py`, or is written in ASCII (the "Savitzky-Golay" method name).
+  `·` and `×` are fine.
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
@@ -86,7 +90,7 @@ from cmp_plotter import plotter as P
 P.messagebox.showerror = lambda title, message, parent=None: print(title, message)
 app = P.Plotter()                      # uses ~/.config/cmp-plotter/settings.json
 app.run.set(next(n for n in app.datasets if "005" in n)); app.apply_controls()
-app.smooth.set("Savitzky–Golay"); app.apply_controls()
+app.smooth.set("Savitzky-Golay"); app.apply_controls()
 print(app.panel.line.shown, app.panel.line.error)
 app.fig.savefig("/some/scratch/dir/check.png")
 app.destroy()
