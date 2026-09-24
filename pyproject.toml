@@ -1,0 +1,21 @@
+[project]
+name = "general-plotter"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Alex Quarry", email = "52108977+Quarrinexus@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pillow>=12.3.0",
+]
+
+[project.scripts]
+general-plotter = "general_plotter:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
