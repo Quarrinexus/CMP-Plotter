@@ -9,8 +9,9 @@ import pandas as pd
 # File types listed as datasets; anything else in the data folder is ignored.
 DATA_EXTENSIONS = {".txt", ".text", ".csv", ".tsv", ".dat"}
 
-# Tried in order; None means runs of whitespace.
-DELIMITERS = ("\t", ",", ";", None)
+# Delimiter names as saved in a format, tried in this order when detecting;
+# None means runs of whitespace. Any other string is used as it is.
+DELIMITERS = {"tab": "\t", "comma": ",", "semicolon": ";", "whitespace": None}
 
 # Consecutive numeric rows needed before a block counts as the data.
 MIN_ROWS = 3
@@ -37,6 +38,14 @@ def describe(name):
     """How a dataset is named on the plot: 'run 005', or its full name."""
     number = run_number(name)
     return f"run {number}" if number else name
+
+
+class FormatError(ValueError):
+    """The file's layout couldn't be detected, or doesn't fit the format given."""
+
+
+def read_lines(path):
+    return Path(path).read_text(errors="replace").splitlines()
 
 
 def _fields(line, delimiter):
@@ -72,12 +81,20 @@ def _data_start(lines, delimiter):
     return None
 
 
-def _layout(lines):
-    """(delimiter, first data line, fields per row), preferring the widest split."""
-    found = [(d, *start) for d in DELIMITERS if (start := _data_start(lines, d))]
+def detect_format(lines):
+    """The format of a file's `lines`, e.g. {'delimiter': 'tab', 'header_line': 10,
+    'data_line': 11}. Lines count from 1; header_line 0 means no column names."""
+    found = [(name, *start) for name, d in DELIMITERS.items()
+             if (start := _data_start(lines, d))]
     if not found:
-        raise ValueError("no block of numeric columns found")
-    return max(found, key=lambda f: f[2])  # max keeps the first of equals
+        raise FormatError("no block of numeric columns found")
+    name, start, width = max(found, key=lambda f: f[2])  # max keeps the first of equals
+    # Column names: the non-blank line just above the numbers, if it fits.
+    header = next((i for i in range(start - 1, -1, -1) if lines[i].strip()), None)
+    names = _fields(lines[header], DELIMITERS[name]) if header is not None else []
+    fits = len(names) == width and len(set(names)) == width
+    return {"delimiter": name, "header_line": header + 1 if fits else 0,
+            "data_line": start + 1}
 
 
 def _strip_suffix(columns):
@@ -90,18 +107,38 @@ def _strip_suffix(columns):
     return stripped if len(set(stripped)) == len(stripped) else columns
 
 
-def load_dataset(path):
-    """Read a data file into a DataFrame, whatever its preamble and delimiter.
-
-    The column names come from the non-blank line just above the numbers."""
-    lines = Path(path).read_text(errors="replace").splitlines()
-    delimiter, start, width = _layout(lines)
-    header = next((lines[i] for i in range(start - 1, -1, -1) if lines[i].strip()), "")
-    names = _fields(header, delimiter)
-    if len(names) != width or len(set(names)) != width:
+def parse(lines, fmt):
+    """A file's `lines` as a DataFrame, read with `fmt` (see detect_format)."""
+    delimiter = DELIMITERS.get(fmt["delimiter"], fmt["delimiter"])
+    start, header = fmt["data_line"] - 1, fmt["header_line"] - 1
+    if not 0 <= start < len(lines):
+        raise FormatError(f"data line {start + 1} is past the end of the file")
+    if header >= start:
+        raise FormatError("the column names must come before the data")
+    width = len(_fields(lines[start], delimiter))
+    if width < 1:
+        raise FormatError(f"line {start + 1} is empty")
+    if header >= 0:
+        names = _fields(lines[header], delimiter)
+        if len(names) != width:
+            raise FormatError(f"line {header + 1} has {len(names)} names but "
+                              f"line {start + 1} has {width} values")
+        if len(set(names)) != width:
+            raise FormatError(f"line {header + 1} repeats a column name")
+    else:
         names = [f"column_{i + 1}" for i in range(width)]
-    # Hand pandas the same lines scanned above, so line counting can't disagree.
-    df = pd.read_csv(StringIO("\n".join(lines[start:])), sep=delimiter or r"\s+",
-                     header=None, names=names, usecols=range(width), index_col=False)
+    try:
+        df = pd.read_csv(StringIO("\n".join(lines[start:])), sep=delimiter or r"\s+",
+                         header=None, names=names, usecols=range(width), index_col=False)
+    except ValueError as err:  # pandas' parser errors are ValueErrors
+        raise FormatError(str(err).strip()) from err
+    if df.empty or not any(t.kind in "fiu" for t in df.dtypes):
+        raise FormatError("no numeric columns with this format")
     df.columns = _strip_suffix(names)
     return df
+
+
+def load_dataset(path, fmt=None):
+    """Read a data file into a DataFrame with `fmt`, or a detected format if None."""
+    lines = read_lines(path)
+    return parse(lines, fmt or detect_format(lines))

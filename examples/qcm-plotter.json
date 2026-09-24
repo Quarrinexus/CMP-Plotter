@@ -1,0 +1,28 @@
+{
+  "labels": {
+    "Timestamp": "time  (s)",
+    "T_Probe": "probe temperature  (K)",
+    "T_VTI": "VTI temperature  (K)",
+    "Norminal_FIeld": "$B$  (T)",
+    "AH": "capacitance (bridge units)",
+    "AH_Loss": "loss (bridge units)"
+  },
+  "units": {
+    "Timestamp": "s",
+    "T_Probe": "K",
+    "T_VTI": "K",
+    "Norminal_FIeld": "T",
+    "AngleHall_x": "raw",
+    "AngleHall_y": "raw",
+    "AH": "bridge units",
+    "AH_Loss": "bridge units"
+  },
+  "samples": {
+    "M006": "#2a78d6",
+    "M011": "#eb6834"
+  },
+  "defaults": {
+    "x": "Norminal_FIeld",
+    "y": "M006_AH"
+  }
+}

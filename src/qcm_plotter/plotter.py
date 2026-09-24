@@ -10,8 +10,11 @@ from PIL import Image, ImageDraw, ImageTk
 
 from qcm_plotter.axis_functions import apply_function, is_identity, rename
 from qcm_plotter.columns import label, with_unit, without_unit
-from qcm_plotter.model import DEFAULT_X, DEFAULT_Y, Panel, legend_labels, line_colours, shared
-from qcm_plotter.datasets import describe, find_datasets, load_dataset, run_number
+from qcm_plotter.model import Panel, legend_labels, line_colours, shared
+from qcm_plotter.profile import load_profile, save_format
+from qcm_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
+                                  load_dataset, read_lines, run_number)
+from qcm_plotter.format_dialog import FormatDialog
 from qcm_plotter.settings import load_settings, save_settings
 from qcm_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
 
@@ -50,6 +53,7 @@ class Plotter(tk.Tk):
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
         self.colour_popup = None
         self.settings = load_settings()
+        self.profile, profile_error = load_profile(self.data_dir)
 
         controls = ttk.Frame(self, padding=10)
         controls.pack(side=tk.LEFT, fill=tk.Y)
@@ -59,6 +63,8 @@ class Plotter(tk.Tk):
             start_open=not (self.settings.get("data_dir") and self.settings.get("output_dir")))
         self.data_label = self._folder_row(folders, "Data folder", "data_dir")
         self.output_label = self._folder_row(folders, "Output folder", "output_dir")
+        ttk.Button(folders, text="Data format...", command=self.edit_format).pack(
+            anchor=tk.W, pady=(0, 2))
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
         ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(0, 2))
         lines = ttk.Frame(controls)
@@ -121,6 +127,8 @@ class Plotter(tk.Tk):
         self._refresh_runs()
         self._build_axes()
         self._load_controls()
+        if profile_error:
+            self._say(profile_error, error=True)
 
     # --- controls ---------------------------------------------------------
 
@@ -223,12 +231,45 @@ class Plotter(tk.Tk):
             self._say(f"Couldn't remember the folder: {err}", error=True)
         if key == "data_dir":
             self._show_folder(self.data_label, key)
-            self.frames.clear()  # names now mean files in the new folder
-            self._refresh_runs()
-            self._build_axes()
+            self._reload_folder()
         else:
             self._show_folder(self.output_label, key)
         return True
+
+    def _reload_folder(self):
+        """Re-read the data folder's profile and files, then redraw everything."""
+        self.profile, error = load_profile(self.data_dir)
+        self._say(error, error=True)
+        self.frames.clear()
+        self._refresh_runs()
+        self._build_axes()
+        self._load_controls()
+
+    def edit_format(self, name=None, reason=""):
+        """Open the Data format window on dataset `name` (default: the selected one)."""
+        self._refresh_runs()
+        name = name or self.panel.line.run or next(iter(self.datasets), None)
+        if name not in self.datasets:
+            self._say("No data files in the data folder." if self.data_dir
+                      else "Choose a data folder first.", error=True)
+            return
+        lines = read_lines(self.datasets[name])
+        fmt = self.profile.format
+        if not fmt:
+            try:
+                fmt = detect_format(lines)
+            except FormatError:
+                fmt = {"delimiter": "tab", "header_line": 0, "data_line": 1}
+        dialog = FormatDialog(self, name, lines, fmt, reason)
+        self.wait_window(dialog)
+        if dialog.cancelled:
+            return
+        try:
+            save_format(self.data_dir, dialog.fmt)
+        except (OSError, ValueError) as err:
+            self._say(f"Couldn't save the format: {err}", error=True)
+            return
+        self._reload_folder()
 
     @property
     def data_dir(self):
@@ -249,9 +290,9 @@ class Plotter(tk.Tk):
         l = self.panel.line
         self.run.set(l.run)
         columns = list(self.frames[l.run].columns) if l.run in self.frames else []
-        self.x.box["values"] = self.y.box["values"] = [with_unit(c) for c in columns]
-        self.x.set(with_unit(l.x) if l.run else "")
-        self.y.set(with_unit(l.y) if l.run else "")
+        self.x.box["values"] = self.y.box["values"] = [with_unit(c, self.profile.units) for c in columns]
+        self.x.set(with_unit(l.x, self.profile.units) if l.run else "")
+        self.y.set(with_unit(l.y, self.profile.units) if l.run else "")
         self.x_fn.set(l.x_fn)
         self.y_fn.set(l.y_fn)
         self.x_fn.show_label()
@@ -260,7 +301,7 @@ class Plotter(tk.Tk):
         self._show_colour()
 
     def _fill_line_list(self):
-        p, colours = self.panel, line_colours(self.panel)
+        p, colours = self.panel, line_colours(self.panel, self.profile.samples)
         self.line_list.delete(0, tk.END)
         for l, colour in zip(p.lines, colours):
             name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
@@ -277,6 +318,14 @@ class Plotter(tk.Tk):
         l.run = self.run.get()
         l.x, l.y = without_unit(self.x.get()) or l.x, without_unit(self.y.get()) or l.y
         l.x_fn, l.y_fn = self.x_fn.get().strip(), self.y_fn.get().strip()
+        if l.run in self.datasets and l.run not in self.frames:
+            try:
+                self._load(l)
+            except FormatError as err:  # ask how the file is laid out
+                self.edit_format(l.run, f"Couldn't read {l.run}: {err}")
+                if l.run not in self.frames:  # still unreadable; don't pop up again
+                    self._redraw_selected()
+                    return
         self._redraw_selected()
         if l.error:  # a popup rather than text in the controls, to save room
             title = "Function error" if l.run in self.frames else "Could not load dataset"
@@ -322,19 +371,21 @@ class Plotter(tk.Tk):
         if line.run not in self.frames:
             if line.run not in self.datasets:
                 raise FileNotFoundError(f"'{line.run}' is not in the data folder")
-            self.frames[line.run] = load_dataset(self.datasets[line.run])
+            self.frames[line.run] = load_dataset(self.datasets[line.run], self.profile.format)
         df = self.frames[line.run]
         # Keep the line's axes if this dataset has them, else fall back to the
-        # default, else the first column for x and the second for y.
+        # profile's default, else the first column for x and the second for y.
         columns = list(df.columns)
-        for attr, default, i in (("x", DEFAULT_X, 0), ("y", DEFAULT_Y, 1)):
+        for attr, i in (("x", 0), ("y", 1)):
+            default = self.profile.defaults.get(attr)
             if getattr(line, attr) not in df:
                 setattr(line, attr, default if default in df else columns[min(i, len(columns) - 1)])
         return df
 
     def _axis(self, df, column, expr):
         """Values and (label, label without sample) for one axis."""
-        values, texts = df[column].to_numpy(), (label(column), label(column, False))
+        labels = self.profile.labels
+        values, texts = df[column].to_numpy(), (label(column, labels), label(column, labels, False))
         if is_identity(expr):
             return values, texts
         values, name = apply_function(expr, values)
@@ -356,7 +407,7 @@ class Plotter(tk.Tk):
         ax.clear()
         self.artists[cell] = {}
         drawn, x_labels, y_labels, errors = [], [], [], []
-        for i, (l, colour) in enumerate(zip(p.lines, line_colours(p))):
+        for i, (l, colour) in enumerate(zip(p.lines, line_colours(p, self.profile.samples))):
             l.shown, l.error = None, ""
             if not l.run:
                 continue
@@ -455,7 +506,7 @@ class Plotter(tk.Tk):
     def _show_colour(self, move_picker=True):
         """Recolour the swatch and lines without a redraw, so zoom survives."""
         p = self.panel
-        colours = line_colours(p)
+        colours = line_colours(p, self.profile.samples)
         self.swatch["background"] = colours[p.selected]
         for i, colour in enumerate(colours):
             self.line_list.itemconfigure(i, foreground=colour, selectforeground=colour)

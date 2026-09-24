@@ -6,11 +6,9 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from qcm_plotter.axis_functions import file_part
-from qcm_plotter.columns import SAMPLES, sample_of
+from qcm_plotter.columns import sample_of
 from qcm_plotter.datasets import describe
 
-DEFAULT_X = "Norminal_FIeld"
-DEFAULT_Y = "M006_AH"
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 
 # Colours for extra lines once a panel's sample colours are taken.
@@ -22,9 +20,9 @@ PALETTE = ("#2464d6", "#eb6834", "#2e9e5b", "#8e5bd1", "#c23b6e", "#1a9aa0",
 class Line:
     """One plotted line. x and y are column names."""
     run: str = ""
-    x: str = DEFAULT_X
+    x: str = ""  # "": the profile's default, see Plotter._load
     x_fn: str = "x"
-    y: str = DEFAULT_Y
+    y: str = ""
     y_fn: str = "y"
     colour: str | None = None  # None: picked automatically, see line_colours
     shown: tuple | None = None  # (run, x, x_fn, y, y_fn) as last drawn
@@ -59,14 +57,14 @@ def near(colour, others, distance=0.25):
     return any(np.linalg.norm(rgb - to_rgb(o)) < distance for o in others)
 
 
-def line_colours(panel):
+def line_colours(panel, samples):
     """Each line's colour: its pick, else its sample's, else an unused PALETTE one."""
     colours = [l.colour for l in panel.lines]
     used = [c for c in colours if c]
     for i, l in enumerate(panel.lines):
         if colours[i]:
             continue
-        wanted = SAMPLES.get(sample_of(l.y, l.x), NEUTRAL)
+        wanted = samples.get(sample_of(samples, l.y, l.x), NEUTRAL)
         if near(wanted, used):
             wanted = next((c for c in PALETTE if not near(c, used)),
                           PALETTE[len(used) % len(PALETTE)])

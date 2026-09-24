@@ -1,37 +1,9 @@
-"""What the data columns are called on screen: axis labels and units."""
-
-# Samples -> plot colour. Each has a `<name>_AH` capacitance column and a
-# `<name>_AH_Loss` loss column.
-SAMPLES = {"M006": "#2a78d6", "M011": "#eb6834"}
-
-# Column -> axis label; anything missing is labelled with its column name.
-# 'AH' and 'AH_Loss' also match per-sample columns ('M006_AH' ->
-# 'M006 capacitance (bridge units)').
-LABELS = {
-    "Timestamp": "time  (s)",
-    "T_Probe": "probe temperature  (K)",
-    "T_VTI": "VTI temperature  (K)",
-    "Norminal_FIeld": r"$B$  (T)",
-    "AH": "capacitance (bridge units)",
-    "AH_Loss": "loss (bridge units)",
-}
-
-# Column -> unit shown beside it in the dropdowns, matched like LABELS. The
-# Hall channels are raw instrument readings; the file header gives no units.
-UNITS = {
-    "Timestamp": "s",
-    "T_Probe": "K",
-    "T_VTI": "K",
-    "Norminal_FIeld": "T",
-    "AngleHall_x": "raw",
-    "AngleHall_y": "raw",
-    "AH": "bridge units",
-    "AH_Loss": "bridge units",
-}
+"""Column names on screen, from the profile's labels and units ('AH' also matches 'M006_AH')."""
 
 
 def lookup(table, column):
     """(entry, sample prefix) for `column` in `table`: 'M006_AH_Loss' -> (..., 'M006')."""
+    # Longest key first, so 'M006_AH_Loss' finds 'AH_Loss' rather than 'AH'.
     if column in table:
         return table[column], ""
     for key in sorted(table, key=len, reverse=True):
@@ -40,17 +12,17 @@ def lookup(table, column):
     return None, ""
 
 
-def label(column, with_sample=True):
+def label(column, labels, with_sample=True):
     """Axis label: 'M006_AH' -> 'M006 capacitance (bridge units)'."""
-    text, prefix = lookup(LABELS, column)
+    text, prefix = lookup(labels, column)
     if text is None:
         return column
     return f"{prefix} {text}" if prefix and with_sample else text
 
 
-def with_unit(column):
+def with_unit(column, units):
     """Dropdown text for a column: 'Norminal_FIeld' -> 'Norminal_FIeld  (T)'."""
-    unit, _ = lookup(UNITS, column)
+    unit, _ = lookup(units, column)
     return f"{column}  ({unit})" if unit else column
 
 
@@ -59,10 +31,10 @@ def without_unit(text):
     return text.partition("  (")[0]
 
 
-def sample_of(*columns):
-    """The SAMPLES sample the first matching column belongs to, else ''."""
+def sample_of(samples, *columns):
+    """The sample in `samples` the first matching column belongs to, else ''."""
     for col in columns:
-        for sample in SAMPLES:
+        for sample in samples:
             if col.startswith(f"{sample}_"):
                 return sample
     return ""
