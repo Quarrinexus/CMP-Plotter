@@ -74,6 +74,7 @@ class Panel:
     window: str = "hann"  # FFT window, a key of spectrum.WINDOWS
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
+    axes_group: int | None = None  # panels with the same number share x and y limits
 
     @property
     def line(self):

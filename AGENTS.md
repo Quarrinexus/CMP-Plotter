@@ -82,6 +82,17 @@ colours, added and removed lines all show in both with no copying. So:
   always makes an independent data panel.
 - There are no FFTs of FFT panels, and no fit-range picking on them.
 
+## Linked axes are a different link
+
+`Panel.axes_group` puts panels in a group that starts on one x and y range
+covering all their data. Unlike FFT panels, they don't share lines, and
+zooming or panning one doesn't move the others, so this is deliberately not
+matplotlib's `sharex`/`sharey`. After drawing, `_fit_groups` adds the
+group's extent to each member's data limits and autoscales: the shared range
+is then simply what autoscaling and Home give, and a member the user has
+zoomed (autoscale off) keeps its view. Call it after any redraw that can
+change a member's data; `_build_axes` and `_redraw_selected` do.
+
 ## Things that look odd but are deliberate
 
 - **Row order, not sorted x.** The field record jitters (hundreds of direction
