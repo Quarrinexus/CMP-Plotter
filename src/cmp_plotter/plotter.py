@@ -6,10 +6,11 @@ from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.widgets import SpanSelector
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
-from cmp_plotter import smoothing
+from cmp_plotter import background, smoothing
 from cmp_plotter.columns import label, with_unit, without_unit
 from cmp_plotter.model import Panel, legend_labels, line_colours, shared
 from cmp_plotter.profile import load_profile, save_format
@@ -53,6 +54,7 @@ class Plotter(tk.Tk):
         self.axes = {}  # (row, col) -> matplotlib Axes
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
         self.colour_popup = None
+        self.picker = None  # the SpanSelector while a fit range is being dragged
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
 
@@ -101,6 +103,8 @@ class Plotter(tk.Tk):
         ttk.Button(axes, image=self.swap_icon, command=self.swap).pack(
             side=tk.LEFT, padx=(6, 0))
         self._smoothing_box(controls)
+        self._background_box(controls)
+        self.bind("<Escape>", lambda _: self.stop_picking())
 
         # Saving sits at the bottom of the column.
         save = ttk.Frame(controls)
@@ -276,6 +280,47 @@ class Plotter(tk.Tk):
                             if self.panel.line.in_x else "points, in the order they were taken")
         self.smooth.show = refresh
 
+    def _background_box(self, parent):
+        """A collapsed 'Background' toggle: mode, degree and the fit's x range."""
+        self.fit_mode = tk.StringVar(value=background.MODES[""])
+        self.degree = tk.StringVar(value="10")
+        self.fit_from, self.fit_to = tk.StringVar(), tk.StringVar()
+
+        def text(is_open):
+            fitted = self.panel.line.fitting
+            # Without the range, which would widen the column.
+            used = f": {background.describe(*fitted[:2], None, None)}" if fitted and not is_open else ""
+            return f"Background{used}"
+
+        body = self._collapsible(parent, (10, 0), text)
+        mode = ttk.Combobox(body, textvariable=self.fit_mode, state="readonly", width=24,
+                            values=list(background.MODES.values()))
+        mode.pack(anchor=tk.W, pady=(2, 0))
+        mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Degree").pack(side=tk.LEFT)
+        degree = ttk.Spinbox(row, textvariable=self.degree, from_=0, to=30, width=3,
+                             command=self.apply_controls)
+        degree.pack(side=tk.LEFT, padx=(4, 0))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Fit x from").pack(side=tk.LEFT)
+        start = ttk.Entry(row, textvariable=self.fit_from, width=8)
+        start.pack(side=tk.LEFT, padx=(4, 4))
+        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        end = ttk.Entry(row, textvariable=self.fit_to, width=8)
+        end.pack(side=tk.LEFT, padx=(4, 0))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Button(row, text="Pick on plot", command=self.pick_range).pack(side=tk.LEFT)
+        ttk.Label(row, text="blank: whole line", foreground="#9a9992").pack(
+            side=tk.LEFT, padx=(8, 0))
+        for box in (degree, start, end):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_controls())
+        self.fit_mode.show = body.refresh
+
     def _folder_row(self, parent, label, key):
         """'Data folder' etc.: the chosen path, with Browse... to change it."""
         ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(0, 2))
@@ -378,6 +423,11 @@ class Plotter(tk.Tk):
         self.window.set((f"{l.span:g}" if l.span is not None else "") if l.in_x else l.window)
         self.order.set(l.order)
         self.smooth.show()
+        self.fit_mode.set(background.MODES[l.background])
+        self.degree.set(l.degree)
+        self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
+        self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
+        self.fit_mode.show()
         self._say("")  # errors pop up instead; see apply_controls
         self._show_colour()
 
@@ -388,6 +438,8 @@ class Plotter(tk.Tk):
             name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
             if l.smoothing:
                 name += f" · {smoothing.describe(*l.smoothing)}"
+            if l.fitting:
+                name += f" · {background.describe(*l.fitting)}"
             self.line_list.insert(tk.END, name)
             self.line_list.itemconfigure(tk.END, foreground=colour,
                                          selectforeground=colour)
@@ -397,6 +449,7 @@ class Plotter(tk.Tk):
 
     def apply_controls(self):
         """Copy the controls into the selected line and redraw its panel."""
+        self.stop_picking()
         l = self.panel.line
         before, old_x = l.shown, (l.x, l.x_fn)
         l.run = self.run.get()
@@ -412,8 +465,19 @@ class Plotter(tk.Tk):
                 setattr(l, attr, kind(var.get()))
             except ValueError:  # not a number: keep the old one (shown again below)
                 pass
+        l.background = next(k for k, v in background.MODES.items() if v == self.fit_mode.get())
+        try:
+            l.degree = int(self.degree.get())
+        except ValueError:
+            pass
+        for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to)):
+            try:
+                setattr(l, attr, float(var.get()) if var.get().strip() else None)
+            except ValueError:
+                pass
         if (l.x, l.x_fn) != old_x:
-            l.span = None  # a window in the old x means nothing in the new one
+            # A window or range in the old x means nothing in the new one.
+            l.span = l.fit_from = l.fit_to = None
         if l.run in self.datasets and l.run not in self.frames:
             try:
                 self._load(l)
@@ -424,24 +488,33 @@ class Plotter(tk.Tk):
                     return
             except Exception:  # anything else is reported by the redraw below
                 pass
-        # Only the smoothing changed: keep the zoom, as it's often tuned zoomed in.
-        same = before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn)
-        self._redraw_selected(keep_view=same)
+        # Same axes: keep the zoom, as smoothing and fits are often tuned zoomed
+        # in. A background change moves y by orders of magnitude, so only x.
+        keep = ""
+        if before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn):
+            keep = "xy" if before[6] == l.fitting else "x"
+        self._redraw_selected(keep)
         if l.error:  # a popup rather than text in the controls, to save room
-            if l.run in self.frames:  # "Function error: ..." or "Smoothing error: ..."
+            if l.run in self.frames:  # "Function error: ...", "Smoothing error: ", ...
                 title, _, text = l.error.partition(": ")
             else:
                 title, text = "Could not load dataset", l.error
             messagebox.showerror(title, text, parent=self)
 
-    def _redraw_selected(self, keep_view=False):
+    def _redraw_selected(self, keep=""):
+        """Redraw the selected panel, keeping its x and/or y limits if `keep` says."""
         ax = self.axes[self.selected]
         view = ax.get_xlim(), ax.get_ylim()
+        # Only limits the user set (zooming turns autoscaling off); a view
+        # that was just fitted to the old data should refit to the new.
+        keep = "".join(a for a in keep if not getattr(ax, f"get_autoscale{a}_on")())
         self._draw_panel(self.selected)
-        if keep_view and ax.lines:
+        if keep and ax.lines:
             self.toolbar.push_current()  # the full view, for the toolbar's Home
-            ax.set_xlim(view[0])
-            ax.set_ylim(view[1])
+            if "x" in keep:
+                ax.set_xlim(view[0])
+            if "y" in keep:
+                ax.set_ylim(view[1])
             self.toolbar.push_current()
         self._load_controls()  # loading a run can change the axis choices
         self._update_filename()
@@ -450,6 +523,7 @@ class Plotter(tk.Tk):
     # --- lines ------------------------------------------------------------
 
     def _select_line(self, index):
+        self.stop_picking()
         self.panel.selected = index
         self._load_controls()
 
@@ -503,6 +577,7 @@ class Plotter(tk.Tk):
 
     def _build_axes(self):
         """Recreate the grid of axes and draw every panel into it."""
+        self.stop_picking()
         self.fig.clear()
         grid = self.fig.subplots(self.rows, self.cols, squeeze=False)
         self.axes = {(r, c): grid[r, c] for r in range(self.rows) for c in range(self.cols)}
@@ -526,7 +601,14 @@ class Plotter(tk.Tk):
                 df = self._load(l)
                 x, x_label = self._axis(df, l.x, l.x_fn)
                 y, y_label = self._axis(df, l.y, l.y_fn)
-                stage = "Smoothing"  # after the function: smooth what's plotted
+                # Background first, so the fit sees the unsmoothed data and
+                # smoothing then works on what's left.
+                stage = "Background"
+                if l.fitting:
+                    y = background.apply(x, y, *l.fitting)
+                if l.background == "subtract":
+                    y_label = tuple(f"{t} − fit" for t in y_label)
+                stage = "Smoothing"
                 if l.smooth and l.in_x and l.span is None:
                     l.span = smoothing.span_for(x, l.window)
                 if l.smoothing:
@@ -537,8 +619,10 @@ class Plotter(tk.Tk):
                 continue
             # What's on screen, so Save names the plot shown rather than
             # whatever is typed but not yet applied.
-            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing)
-            (artist,) = ax.plot(x, y, lw=0.7, color=colour)
+            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
+            # A shown fit is dashed, so it reads as a fit laid over the data.
+            fit_style = {"ls": "--", "lw": 1.0} if l.background == "fit" else {}
+            (artist,) = ax.plot(x, y, **({"lw": 0.7, "color": colour} | fit_style))
             self.artists[cell][artist] = i
             drawn.append(l)
             x_labels.append(x_label)
@@ -579,6 +663,8 @@ class Plotter(tk.Tk):
 
     def _on_click(self, event):
         """Select the clicked panel, and the line under the mouse if any."""
+        if self.picker:  # the click starts a fit-range drag instead
+            return
         cell = next((c for c, ax in self.axes.items() if ax is event.inaxes), None)
         if cell is None:
             return
@@ -615,8 +701,48 @@ class Plotter(tk.Tk):
         for l in self.panel.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
-            l.span = None  # re-estimated for the new x when drawn
+            l.span = l.fit_from = l.fit_to = None  # in the old x; meaningless now
         self._redraw_selected()
+
+    # --- fit range --------------------------------------------------------
+
+    def pick_range(self):
+        """Drag across the selected panel to set the selected line's fit range."""
+        self.stop_picking()
+        ax = self.axes[self.selected]
+        if not self.panel.line.shown:
+            self._say("Plot the line first, then pick its fit range.", error=True)
+            return
+        if self.toolbar.mode:
+            self._say("Turn off the toolbar's zoom or pan first.", error=True)
+            return
+        self.picker = SpanSelector(ax, self._picked, "horizontal", useblit=True,
+                                   props={"facecolor": SELECTED, "alpha": 0.3})
+        self._say("Drag across the plot to set the fit range; Esc cancels.")
+
+    def _picked(self, start, end):
+        # After the selector has finished its own handling of the release,
+        # which would otherwise paint its stale background over the redraw.
+        self.after_idle(self._use_range, start, end)
+
+    def _use_range(self, start, end):
+        self.stop_picking()
+        if start == end:  # a click, not a drag
+            return
+        # 5 significant figures: plenty for a fit range, and tidy in the boxes.
+        self.fit_from.set(f"{start:.5g}")
+        self.fit_to.set(f"{end:.5g}")
+        self.apply_controls()
+        if not self.panel.line.background:
+            self._say("Range set; choose Show fit or Subtract to use it.")
+
+    def stop_picking(self):
+        if self.picker:
+            self.picker.disconnect_events()
+            self.picker.set_visible(False)  # its shaded span, if one was drawn
+            self.picker = None
+            self.canvas.draw_idle()
+            self._say("")
 
     # --- colour -----------------------------------------------------------
 
@@ -665,8 +791,9 @@ class Plotter(tk.Tk):
         first = self.panels[0, 0].lines[0]
         if not first.shown:
             return ""
-        run, y, x, smoothed = first.parts()
-        tail = f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
+        run, y, x, smoothed, fitted = first.parts()
+        tail = f"_{background.file_part(*fitted)}" if fitted else ""
+        tail += f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
         return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}{tail}.png"
 
     def _update_filename(self):

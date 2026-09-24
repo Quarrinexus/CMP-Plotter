@@ -50,6 +50,14 @@ After pulling changes, update it with `uv tool install --reinstall .`;
   becomes a polynomial fit in x, right for unevenly spaced points. It applies
   to the plotted y, after its function. To see raw and smoothed together, copy the
   line with + and smooth the copy; the legend tells them apart.
+- **Background**: per line, under Smoothing. Fits a polynomial of the chosen
+  degree to the plotted y against the plotted x (so in 1/B with a `1/x`
+  function) and either **Subtract**s it, leaving the oscillations, or
+  **Show fit**, which draws the fit dashed in place of the data; copy a line
+  with + to lay its fit over it. **Fit x from ... to** limits the fit to part
+  of the line (leave out the parked ends of a sweep); outside it the line
+  isn't drawn. **Pick on plot** sets the range by dragging across the plot.
+  The fit comes before smoothing.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it. The swatch beside the list picks its colour.
