@@ -31,8 +31,12 @@ class Plotter(tk.Tk):
 
         controls = ttk.Frame(self, padding=10)
         controls.pack(side=tk.LEFT, fill=tk.Y)
-        self.data_label = self._folder_row(controls, "Data folder", "data_dir")
-        self.output_label = self._folder_row(controls, "Output folder", "output_dir")
+        # Open at start only if a folder still needs choosing.
+        folders = self._collapsible(
+            controls, (0, 0), lambda _: "Folders",
+            start_open=not (self.settings.get("data_dir") and self.settings.get("output_dir")))
+        self.data_label = self._folder_row(folders, "Data folder", "data_dir")
+        self.output_label = self._folder_row(folders, "Output folder", "output_dir")
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
         ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(0, 2))
         lines = ttk.Frame(controls)
@@ -99,47 +103,62 @@ class Plotter(tk.Tk):
         var.box = box
         return var
 
-    def _function_box(self, parent, name):
-        """A collapsed 'Function' toggle that opens to an entry box."""
+    def _collapsible(self, parent, pady, text, start_open=False, on_open=None):
+        """A triangle toggle that shows or hides the frame it returns.
+
+        `text(is_open)` gives the toggle's label; `frame.refresh()` updates it."""
         # The triangle is drawn, not typed: Tk's X core fonts can show ▸ as '®'.
-        var = tk.StringVar(value=name)
         toggle = ttk.Frame(parent, cursor="hand2")
-        toggle.pack(anchor=tk.W, pady=(4, 0))
+        toggle.pack(anchor=tk.W, pady=pady)
         arrow = tk.Canvas(toggle, width=10, height=10, highlightthickness=0,
                           background=ttk.Style().lookup("TFrame", "background"))
         arrow.pack(side=tk.LEFT, padx=(0, 4))
-        text = ttk.Label(toggle, foreground="#52514e")
-        text.pack(side=tk.LEFT)
+        label = ttk.Label(toggle, foreground="#52514e")
+        label.pack(side=tk.LEFT)
         body = ttk.Frame(parent)
-        entry = ttk.Entry(body, textvariable=var, width=16)
-        entry.pack(anchor=tk.W)
-        ttk.Label(body, text=f"e.g. 1/{name}, exp({name}) - Enter to apply",
-                  foreground="#9a9992").pack(anchor=tk.W)
 
-        def show_label():
+        def refresh():
             is_open = bool(body.winfo_manager())
             arrow.delete("all")
             points = (1, 2, 9, 2, 5, 8) if is_open else (2, 1, 8, 5, 2, 9)
             arrow.create_polygon(points, fill="#52514e", outline="")
-            # Collapsed but in use: show the function so it isn't forgotten.
-            expr = var.get().strip()
-            used = f": {expr}" if not is_identity(expr) and not is_open else ""
-            text["text"] = f"Function{used}"
+            label["text"] = text(is_open)
 
         def flip(_):
             if body.winfo_manager():
                 body.pack_forget()
             else:
-                body.pack(anchor=tk.W, after=toggle)
-                entry.focus_set()
-            show_label()
+                body.pack(anchor=tk.W, fill=tk.X, after=toggle)
+                if on_open:
+                    on_open()
+            refresh()
 
-        for widget in (toggle, arrow, text):
+        for widget in (toggle, arrow, label):
             widget.bind("<Button-1>", flip)
+        if start_open:
+            body.pack(anchor=tk.W, fill=tk.X, after=toggle)
+        refresh()
+        body.refresh = refresh
+        return body
+
+    def _function_box(self, parent, name):
+        """A collapsed 'Function' toggle that opens to an entry box."""
+        var = tk.StringVar(value=name)
+
+        def text(is_open):
+            # Collapsed but in use: show the function so it isn't forgotten.
+            expr = var.get().strip()
+            used = f": {expr}" if not is_identity(expr) and not is_open else ""
+            return f"Function{used}"
+
+        body = self._collapsible(parent, (4, 0), text, on_open=lambda: entry.focus_set())
+        entry = ttk.Entry(body, textvariable=var, width=16)
+        entry.pack(anchor=tk.W)
+        ttk.Label(body, text=f"e.g. 1/{name}, exp({name}) - Enter to apply",
+                  foreground="#9a9992").pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
-            entry.bind(key, lambda _: (self.apply_controls(), show_label()))
-        show_label()
-        var.show_label = show_label
+            entry.bind(key, lambda _: (self.apply_controls(), body.refresh()))
+        var.show_label = body.refresh
         return var
 
     def _folder_row(self, parent, label, key):
