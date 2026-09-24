@@ -45,7 +45,7 @@ class FormatError(ValueError):
 
 
 def read_lines(path):
-    return Path(path).read_text(errors="replace").splitlines()
+    return Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
 
 
 def _fields(line, delimiter):

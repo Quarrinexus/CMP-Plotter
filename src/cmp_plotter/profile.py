@@ -21,7 +21,7 @@ def _read(data_dir):
     path = Path(data_dir) / PROFILE_NAME
     if not path.is_file():
         return {}
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("expected a JSON object")
     return data
@@ -61,4 +61,4 @@ def save_format(data_dir, fmt):
         data.pop("format", None)
     else:
         data["format"] = fmt
-    (Path(data_dir) / PROFILE_NAME).write_text(json.dumps(data, indent=2) + "\n")
+    (Path(data_dir) / PROFILE_NAME).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
