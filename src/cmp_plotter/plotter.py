@@ -61,9 +61,13 @@ class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CMP Plotter")
-        # Room for the controls with a section or two open, screen allowing;
-        # beyond that they scroll.
+        # Starts maximised. This is the size it returns to when un-maximised:
+        # room for the controls with a section or two open, screen allowing.
         self.geometry(f"1150x{min(820, self.winfo_screenheight() - 80)}")
+        try:
+            self.state("zoomed")  # Windows and macOS
+        except tk.TclError:
+            self.attributes("-zoomed", True)  # Linux (X11)
         self.frames = {}  # dataset name -> DataFrame, so each file is read once
         self.datasets = {}  # dataset name -> file, from the data folder
         self.rows, self.cols = 1, 1
