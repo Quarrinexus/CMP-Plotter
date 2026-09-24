@@ -45,7 +45,9 @@ class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CMP Plotter")
-        self.geometry("1150x760")
+        # Room for the controls with a section or two open, screen allowing;
+        # beyond that they scroll.
+        self.geometry(f"1150x{min(820, self.winfo_screenheight() - 80)}")
         self.frames = {}  # dataset name -> DataFrame, so each file is read once
         self.datasets = {}  # dataset name -> file, from the data folder
         self.rows, self.cols = 1, 1
@@ -58,8 +60,26 @@ class Plotter(tk.Tk):
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
 
-        controls = ttk.Frame(self, padding=10)
-        controls.pack(side=tk.LEFT, fill=tk.Y)
+        # The controls column scrolls, with a scrollbar only when it's taller
+        # than the window; Save stays pinned below it.
+        side = ttk.Frame(self)
+        side.pack(side=tk.LEFT, fill=tk.Y)
+        save = ttk.Frame(side, padding=(10, 0, 10, 10))
+        save.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X)
+        self.side = tk.Canvas(side, highlightthickness=0, borderwidth=0, yscrollincrement=20,
+                              background=ttk.Style().lookup("TFrame", "background"))
+        self.side.pack(side=tk.LEFT, fill=tk.Y)
+        ttk.Style().configure("Side.Vertical.TScrollbar", arrowsize=10)
+        self.side_scroll = ttk.Scrollbar(side, orient=tk.VERTICAL, command=self.side.yview,
+                                         style="Side.Vertical.TScrollbar")
+        self.side.configure(yscrollcommand=self.side_scroll.set)
+        controls = ttk.Frame(self.side, padding=(10, 10, 10, 0))
+        self.side.create_window(0, 0, window=controls, anchor=tk.NW)
+        self.side_inner = controls
+        controls.bind("<Configure>", self._fit_side)
+        self.side.bind("<Configure>", self._fit_side)
+        for sequence in ("<Button-4>", "<Button-5>", "<MouseWheel>"):
+            self.bind_all(sequence, self._scroll_side, add="+")
         # Open at start only if a folder still needs choosing.
         folders = self._collapsible(
             controls, (0, 0), lambda _: "Folders",
@@ -106,9 +126,7 @@ class Plotter(tk.Tk):
         self._background_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
 
-        # Saving sits at the bottom of the column.
-        save = ttk.Frame(controls)
-        save.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X)
+        # Saving sits at the bottom of the column, below the scrolling part.
         ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(16, 2))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
@@ -137,6 +155,24 @@ class Plotter(tk.Tk):
             self._say(profile_error, error=True)
 
     # --- controls ---------------------------------------------------------
+
+    def _fit_side(self, _=None):
+        """Size the controls column to its contents; scrollbar only if it doesn't fit."""
+        width, height = self.side_inner.winfo_reqwidth(), self.side_inner.winfo_reqheight()
+        self.side.configure(width=width, scrollregion=(0, 0, width, height))
+        if height > self.side.winfo_height():
+            if not self.side_scroll.winfo_manager():
+                self.side_scroll.pack(side=tk.LEFT, fill=tk.Y)
+        elif self.side_scroll.winfo_manager():
+            self.side_scroll.pack_forget()
+            self.side.yview_moveto(0)
+
+    def _scroll_side(self, event):
+        """Mouse wheel over the controls scrolls them, when they're scrollable."""
+        if not self.side_scroll.winfo_manager() or not str(event.widget).startswith(str(self.side)):
+            return
+        up = event.num == 4 or getattr(event, "delta", 0) > 0
+        self.side.yview_scroll(-1 if up else 1, "units")
 
     def _combo(self, parent, label, values, default="", **kwargs):
         ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(8, 2))

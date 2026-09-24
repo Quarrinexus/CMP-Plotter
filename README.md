@@ -58,6 +58,8 @@ After pulling changes, update it with `uv tool install --reinstall .`;
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick on plot** sets the range by dragging across the plot.
   The fit comes before smoothing.
+- The controls column scrolls (mouse wheel or its scrollbar) when it's taller
+  than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it. The swatch beside the list picks its colour.
