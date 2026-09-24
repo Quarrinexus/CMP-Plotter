@@ -207,7 +207,7 @@ class Plotter(tk.Tk):
         row.pack(anchor=tk.W, fill=tk.X, pady=(0, 6))
         ttk.Button(row, text="Browse...",
                    command=lambda: self.choose_folder(key, label)).pack(side=tk.RIGHT)
-        path = ttk.Label(row, width=22, anchor=tk.W)
+        path = ttk.Label(row, width=19, anchor=tk.W)
         path.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._show_folder(path, key)
         return path
