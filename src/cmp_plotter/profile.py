@@ -1,10 +1,10 @@
-"""A data folder's `qcm-plotter.json`: labels, units, sample colours, default axes, format."""
+"""A data folder's `cmp-plotter.json`: labels, units, sample colours, default axes, format."""
 
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
-PROFILE_NAME = "qcm-plotter.json"
+PROFILE_NAME = "cmp-plotter.json"
 
 
 @dataclass

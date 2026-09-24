@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 SETTINGS_FILE = (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-                 / "qcm-plotter" / "settings.json")
+                 / "cmp-plotter" / "settings.json")
 
 
 def load_settings():

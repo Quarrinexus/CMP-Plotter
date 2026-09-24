@@ -8,15 +8,15 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from PIL import Image, ImageDraw, ImageTk
 
-from qcm_plotter.axis_functions import apply_function, is_identity, rename
-from qcm_plotter.columns import label, with_unit, without_unit
-from qcm_plotter.model import Panel, legend_labels, line_colours, shared
-from qcm_plotter.profile import load_profile, save_format
-from qcm_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
+from cmp_plotter.axis_functions import apply_function, is_identity, rename
+from cmp_plotter.columns import label, with_unit, without_unit
+from cmp_plotter.model import Panel, legend_labels, line_colours, shared
+from cmp_plotter.profile import load_profile, save_format
+from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
-from qcm_plotter.format_dialog import FormatDialog
-from qcm_plotter.settings import load_settings, save_settings
-from qcm_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
+from cmp_plotter.format_dialog import FormatDialog
+from cmp_plotter.settings import load_settings, save_settings
+from cmp_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
 
 
 def title(names):
@@ -42,7 +42,7 @@ def swap_icon(colour="#52514e"):
 class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("QCM Plotter")
+        self.title("CMP Plotter")
         self.geometry("1150x760")
         self.frames = {}  # dataset name -> DataFrame, so each file is read once
         self.datasets = {}  # dataset name -> file, from the data folder

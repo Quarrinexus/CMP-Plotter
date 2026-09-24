@@ -5,9 +5,9 @@ from dataclasses import dataclass, field, replace
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from qcm_plotter.axis_functions import file_part
-from qcm_plotter.columns import sample_of
-from qcm_plotter.datasets import describe
+from cmp_plotter.axis_functions import file_part
+from cmp_plotter.columns import sample_of
+from cmp_plotter.datasets import describe
 
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 

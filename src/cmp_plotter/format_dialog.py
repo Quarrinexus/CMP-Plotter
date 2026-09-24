@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from qcm_plotter.datasets import FormatError, parse
+from cmp_plotter.datasets import FormatError, parse
 
 PREVIEW_LINES = 40  # of the raw file
 PREVIEW_ROWS = 5  # of the parsed table

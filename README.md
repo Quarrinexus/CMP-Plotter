@@ -1,4 +1,4 @@
-# QCM Plotter
+# CMP Plotter
 
 Interactive Tk window for plotting columns from delimited text data files
 (`.txt`, `.text`, `.csv`, `.tsv`, `.dat`). The preamble, header line and
@@ -12,28 +12,28 @@ delimiter are detected automatically.
    ```
 2. Get the code:
    ```bash
-   git clone https://github.com/<user>/QCM-Plotter.git
-   cd QCM-Plotter
+   git clone https://github.com/<user>/CMP-Plotter.git
+   cd CMP-Plotter
    ```
 3. Run it. The first run downloads Python 3.13 and the dependencies into
    `.venv`; later runs start straight away.
    ```bash
-   uv run qcm-plotter
+   uv run cmp-plotter
    ```
 
-To get a `qcm-plotter` command that works from any folder instead:
+To get a `cmp-plotter` command that works from any folder instead:
 
 ```bash
 uv tool install .
 ```
 
 After pulling changes, update it with `uv tool install --reinstall .`;
-`uv tool uninstall qcm-plotter` removes it.
+`uv tool uninstall cmp-plotter` removes it.
 
 ## Use
 
 - **Data / Output folder** (under Folders): choose with Browse...; both are
-  remembered in `~/.config/qcm-plotter/settings.json`.
+  remembered in `~/.config/cmp-plotter/settings.json`.
 - **Data format...** (under Folders): set the delimiter, column-name line and
   first data line by hand, with a preview. Opens by itself when a file's layout
   can't be detected. Saved for the whole data folder in its profile.
@@ -53,9 +53,9 @@ After pulling changes, update it with `uv tool install --reinstall .`;
 
 ## Profiles
 
-A `qcm-plotter.json` in the data folder tells the plotter about that folder's
+A `cmp-plotter.json` in the data folder tells the plotter about that folder's
 columns. Everything in it is optional; without one, columns show under their
-raw names. See [examples/qcm-plotter.json](examples/qcm-plotter.json).
+raw names. See [examples/cmp-plotter.json](examples/cmp-plotter.json).
 
 ```json
 {
