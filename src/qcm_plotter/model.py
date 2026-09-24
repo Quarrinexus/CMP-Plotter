@@ -6,8 +6,8 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from qcm_plotter.axis_functions import file_part
-from qcm_plotter.columns import sample_of
-from qcm_plotter.runs import SAMPLES
+from qcm_plotter.columns import SAMPLES, sample_of
+from qcm_plotter.datasets import describe
 
 DEFAULT_X = "Norminal_FIeld"
 DEFAULT_Y = "M006_AH"
@@ -83,7 +83,7 @@ def legend_labels(lines):
         differs[1] = True  # identical lines: say what's on y
     labels = []
     for run, y, x in parts:
-        bits = [f"run {run}"] if differs[0] else []
+        bits = [describe(run)] if differs[0] else []
         if differs[1]:
             bits.append(y)
         if differs[2]:

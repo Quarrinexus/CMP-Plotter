@@ -1,6 +1,8 @@
 """What the data columns are called on screen: axis labels and units."""
 
-from qcm_plotter.runs import SAMPLES
+# Samples -> plot colour. Each has a `<name>_AH` capacitance column and a
+# `<name>_AH_Loss` loss column.
+SAMPLES = {"M006": "#2a78d6", "M011": "#eb6834"}
 
 # Column -> axis label; anything missing is labelled with its column name.
 # 'AH' and 'AH_Loss' also match per-sample columns ('M006_AH' ->
@@ -58,7 +60,7 @@ def without_unit(text):
 
 
 def sample_of(*columns):
-    """The runs.SAMPLES sample the first matching column belongs to, else ''."""
+    """The SAMPLES sample the first matching column belongs to, else ''."""
     for col in columns:
         for sample in SAMPLES:
             if col.startswith(f"{sample}_"):

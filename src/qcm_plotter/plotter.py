@@ -11,9 +11,17 @@ from PIL import Image, ImageDraw, ImageTk
 from qcm_plotter.axis_functions import apply_function, is_identity, rename
 from qcm_plotter.columns import label, with_unit, without_unit
 from qcm_plotter.model import DEFAULT_X, DEFAULT_Y, Panel, legend_labels, line_colours, shared
-from qcm_plotter.runs import available_runs, load_run
+from qcm_plotter.datasets import describe, find_datasets, load_dataset, run_number
 from qcm_plotter.settings import load_settings, save_settings
 from qcm_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
+
+
+def title(names):
+    """Panel title: 'run 005, 003', or the dataset names if they aren't runs."""
+    numbers = [run_number(n) for n in names]
+    if all(numbers):
+        return "run " + ", ".join(numbers)
+    return ", ".join(describe(n) for n in names)
 
 
 def swap_icon(colour="#52514e"):
@@ -33,7 +41,8 @@ class Plotter(tk.Tk):
         super().__init__()
         self.title("QCM Plotter")
         self.geometry("1150x760")
-        self.frames = {}  # run id -> DataFrame, so each file is read once
+        self.frames = {}  # dataset name -> DataFrame, so each file is read once
+        self.datasets = {}  # dataset name -> file, from the data folder
         self.rows, self.cols = 1, 1
         self.panels = {(0, 0): Panel()}  # (row, col) -> Panel
         self.selected = (0, 0)
@@ -214,7 +223,7 @@ class Plotter(tk.Tk):
             self._say(f"Couldn't remember the folder: {err}", error=True)
         if key == "data_dir":
             self._show_folder(self.data_label, key)
-            self.frames.clear()  # run ids now mean files in the new folder
+            self.frames.clear()  # names now mean files in the new folder
             self._refresh_runs()
             self._build_axes()
         else:
@@ -227,7 +236,8 @@ class Plotter(tk.Tk):
 
     def _refresh_runs(self):
         # Re-scan on every open so files added while the window is up appear.
-        self.run.box["values"] = available_runs(self.data_dir)
+        self.datasets = find_datasets(self.data_dir)
+        self.run.box["values"] = list(self.datasets)
 
     @property
     def panel(self):
@@ -253,7 +263,7 @@ class Plotter(tk.Tk):
         p, colours = self.panel, line_colours(self.panel)
         self.line_list.delete(0, tk.END)
         for l, colour in zip(p.lines, colours):
-            name = f"{l.y} · {l.run}" if l.run else "(no dataset)"
+            name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
             self.line_list.insert(tk.END, name)
             self.line_list.itemconfigure(tk.END, foreground=colour,
                                          selectforeground=colour)
@@ -269,7 +279,7 @@ class Plotter(tk.Tk):
         l.x_fn, l.y_fn = self.x_fn.get().strip(), self.y_fn.get().strip()
         self._redraw_selected()
         if l.error:  # a popup rather than text in the controls, to save room
-            title = "Function error" if l.run in self.frames else "Could not load run"
+            title = "Function error" if l.run in self.frames else "Could not load dataset"
             messagebox.showerror(title, l.error.removeprefix("Function error: "), parent=self)
 
     def _redraw_selected(self):
@@ -308,14 +318,18 @@ class Plotter(tk.Tk):
     # --- drawing ----------------------------------------------------------
 
     def _load(self, line):
-        """The line's run, with its axes moved to valid columns if needed."""
+        """The line's dataset, with its axes moved to valid columns if needed."""
         if line.run not in self.frames:
-            self.frames[line.run] = load_run(self.data_dir, line.run)
+            if line.run not in self.datasets:
+                raise FileNotFoundError(f"'{line.run}' is not in the data folder")
+            self.frames[line.run] = load_dataset(self.datasets[line.run])
         df = self.frames[line.run]
-        # Keep the line's axes if this run has them, else fall back.
-        for attr, default in (("x", DEFAULT_X), ("y", DEFAULT_Y)):
+        # Keep the line's axes if this dataset has them, else fall back to the
+        # default, else the first column for x and the second for y.
+        columns = list(df.columns)
+        for attr, default, i in (("x", DEFAULT_X, 0), ("y", DEFAULT_Y, 1)):
             if getattr(line, attr) not in df:
-                setattr(line, attr, default if default in df else df.columns[0])
+                setattr(line, attr, default if default in df else columns[min(i, len(columns) - 1)])
         return df
 
     def _axis(self, df, column, expr):
@@ -366,7 +380,7 @@ class Plotter(tk.Tk):
         if drawn:
             ax.set_xlabel(shared(x_labels))
             ax.set_ylabel(shared(y_labels))
-            ax.set_title("run " + ", ".join(dict.fromkeys(l.run for l in drawn)))
+            ax.set_title(title(dict.fromkeys(l.run for l in drawn)))
             ax.grid(True, lw=0.4, alpha=0.8)
             if len(drawn) > 1:
                 for artist, text in zip(ax.lines, legend_labels(drawn)):
@@ -484,7 +498,7 @@ class Plotter(tk.Tk):
         if not first.shown:
             return ""
         run, y, x = first.parts()
-        return f"run_{run}_{y}_vs_{x}.png"
+        return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}.png"
 
     def _update_filename(self):
         """Put the default name in the Save as box, unless the user typed one."""

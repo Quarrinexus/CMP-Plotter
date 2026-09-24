@@ -1,6 +1,8 @@
 # QCM Plotter
 
-Interactive Tk window for plotting columns from `*.NNN.text` run files.
+Interactive Tk window for plotting columns from delimited text data files
+(`.txt`, `.text`, `.csv`, `.tsv`, `.dat`). The preamble, header line and
+delimiter are detected automatically.
 
 ## Install
 
