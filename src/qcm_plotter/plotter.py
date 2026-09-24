@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from PIL import Image, ImageDraw, ImageTk
 
 from qcm_plotter.axis_functions import apply_function, is_identity, rename
 from qcm_plotter.columns import label, with_unit, without_unit
@@ -13,6 +14,18 @@ from qcm_plotter.model import DEFAULT_X, DEFAULT_Y, Panel, legend_labels, line_c
 from qcm_plotter.runs import available_runs, load_run
 from qcm_plotter.settings import load_settings, save_settings
 from qcm_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
+
+
+def swap_icon(colour="#52514e"):
+    """A two-way arrow (up beside down) for the swap-axes button."""
+    # Drawn, not typed: Tk's X core fonts can show arrow characters as '®'.
+    image = Image.new("RGBA", (18, 22))
+    draw = ImageDraw.Draw(image)
+    draw.line((5, 5, 5, 20), fill=colour, width=2)
+    draw.polygon(((0, 7), (5, 1), (10, 7)), fill=colour)
+    draw.line((12, 1, 12, 16), fill=colour, width=2)
+    draw.polygon(((7, 14), (12, 20), (17, 14)), fill=colour)
+    return ImageTk.PhotoImage(image)
 
 
 class Plotter(tk.Tk):
@@ -60,22 +73,31 @@ class Plotter(tk.Tk):
         self.swatch.bind("<Button-1>", lambda _: self.open_colour())
 
         self.run = self._combo(controls, "Dataset", [], postcommand=self._refresh_runs)
-        self.x = self._combo(controls, "X axis", [])
-        self.x_fn = self._function_box(controls, "x")
-        self.y = self._combo(controls, "Y axis", [])
-        self.y_fn = self._function_box(controls, "y")
-        ttk.Label(controls, text="Save as").pack(anchor=tk.W, pady=(16, 2))
+        axes = ttk.Frame(controls)
+        axes.pack(anchor=tk.W, fill=tk.X)
+        axis_boxes = ttk.Frame(axes)
+        axis_boxes.pack(side=tk.LEFT)
+        self.x = self._combo(axis_boxes, "X axis", [])
+        self.x_fn = self._function_box(axis_boxes, "x")
+        self.y = self._combo(axis_boxes, "Y axis", [])
+        self.y_fn = self._function_box(axis_boxes, "y")
+        self.swap_icon = swap_icon()
+        ttk.Button(axes, image=self.swap_icon, command=self.swap).pack(
+            side=tk.LEFT, padx=(6, 0))
+
+        # Saving sits at the bottom of the column.
+        save = ttk.Frame(controls)
+        save.pack(side=tk.BOTTOM, anchor=tk.W, fill=tk.X)
+        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(16, 2))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
-        ttk.Entry(controls, textvariable=self.filename, width=26).pack(anchor=tk.W)
-        buttons = ttk.Frame(controls)
+        ttk.Entry(save, textvariable=self.filename, width=26).pack(anchor=tk.W)
+        buttons = ttk.Frame(save)
         buttons.pack(anchor=tk.W, pady=(8, 0))
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="Swap axes", command=self.swap).pack(
-            side=tk.LEFT, padx=(6, 0))
         ttk.Button(buttons, text="Save figure", command=self.save).pack(
             side=tk.LEFT, padx=(6, 0))
-        self.status = ttk.Label(controls, wraplength=230)
+        self.status = ttk.Label(save, wraplength=230)
         self.status.pack(anchor=tk.W, pady=(12, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
