@@ -5,9 +5,9 @@ from dataclasses import dataclass, field, replace
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from general_plotter.axis_functions import file_part
-from general_plotter.columns import sample_of
-from general_plotter.runs import SAMPLES
+from qcm_plotter.axis_functions import file_part
+from qcm_plotter.columns import sample_of
+from qcm_plotter.runs import SAMPLES
 
 DEFAULT_X = "Norminal_FIeld"
 DEFAULT_Y = "M006_AH"

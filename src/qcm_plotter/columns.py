@@ -1,6 +1,6 @@
 """What the data columns are called on screen: axis labels and units."""
 
-from general_plotter.runs import SAMPLES
+from qcm_plotter.runs import SAMPLES
 
 # Column -> axis label; anything missing is labelled with its column name.
 # 'AH' and 'AH_Loss' also match per-sample columns ('M006_AH' ->

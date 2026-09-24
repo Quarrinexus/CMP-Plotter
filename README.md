@@ -1,13 +1,13 @@
-# General Plotter
+# QCM Plotter
 
 Interactive Tk window for plotting columns from `*.NNN.text` run files.
 
 ```bash
-uv run general-plotter
+uv run qcm-plotter
 ```
 
 - **Data / Output folder**: choose with Browse...; both are remembered in
-  `~/.config/general-plotter/settings.json`.
+  `~/.config/qcm-plotter/settings.json`.
 - **Dataset, X axis, Y axis**: any column against any other, sample columns
   (`M006_AH`, `M011_AH_Loss`, ...) included. Changing a control redraws.
 - **Function**: under each axis, e.g. `1/x`, `exp(y)`, `log10(x)`; numpy's usual

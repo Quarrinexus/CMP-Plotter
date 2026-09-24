@@ -7,18 +7,18 @@ from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 
-from general_plotter.axis_functions import apply_function, is_identity, rename
-from general_plotter.columns import label, with_unit, without_unit
-from general_plotter.model import DEFAULT_X, DEFAULT_Y, Panel, legend_labels, line_colours, shared
-from general_plotter.runs import available_runs, load_run
-from general_plotter.settings import load_settings, save_settings
-from general_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
+from qcm_plotter.axis_functions import apply_function, is_identity, rename
+from qcm_plotter.columns import label, with_unit, without_unit
+from qcm_plotter.model import DEFAULT_X, DEFAULT_Y, Panel, legend_labels, line_colours, shared
+from qcm_plotter.runs import available_runs, load_run
+from qcm_plotter.settings import load_settings, save_settings
+from qcm_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
 
 
 class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("General Plotter")
+        self.title("QCM Plotter")
         self.geometry("1150x760")
         self.frames = {}  # run id -> DataFrame, so each file is read once
         self.rows, self.cols = 1, 1
