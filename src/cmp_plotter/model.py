@@ -64,15 +64,23 @@ class Line:
 
 @dataclass
 class Panel:
-    """One subplot: its lines and which of them the controls edit."""
+    """One subplot: its lines and which of them the controls edit.
+
+    An FFT panel has a `source`, the cell of a data panel, and shares that
+    panel's `lines` list itself, so the two stay locked together."""
     lines: list = field(default_factory=lambda: [Line()])
     selected: int = 0
+    source: tuple | None = None
+    window: str = "hann"  # FFT window, a key of spectrum.WINDOWS
+    pad: int = 1  # FFT zero-padding factor
+    f_max: float | None = None  # highest frequency drawn; None: all
 
     @property
     def line(self):
         return self.lines[self.selected]
 
     def copy(self):
+        """An independent data panel with copies of the lines."""
         return Panel([l.copy() for l in self.lines], self.selected)
 
 

@@ -28,18 +28,23 @@ offline oscillation analysis the Smoothing and Background sections mirror.
 | `model.py` | `Line` and `Panel`, colours, legend text, shared axis labels |
 | `smoothing.py` | moving average, median, Savitzky–Golay; windows in points or x |
 | `background.py` | polynomial fit in x, shown or subtracted |
+| `spectrum.py` | FFT of a line against its plotted x, for FFT panels |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
 | `widgets.py` | colour picker, layout grid |
 
 ## How a line is drawn
 
-`Plotter._draw_panel`, per `Line`:
+`Plotter._draw_panel`, per `Line`, via `_line_data`:
 
 1. read the columns, apply the axis functions (`_axis`)
 2. background (`background.apply`): fit on the unsmoothed data
 3. smoothing (`smoothing.smooth`), on what's left
-4. one `ax.plot` call
+4. in an FFT panel only, `spectrum.spectrum` of that against x
+5. one `ax.plot` call
+
+`_line_data` caches steps 1–3 per line, keyed on the line's settings, so a
+data panel and its FFT panels do the work once; `_reload_folder` clears it.
 
 Keep that order. Things that depend on it:
 
@@ -56,6 +61,23 @@ Keep that order. Things that depend on it:
   changes, or on ⇅, since a value in T means nothing in 1/B.
 - Errors are stored in `Line.error` as `"<Stage> error: message"`; the text
   before the first `": "` becomes the popup title.
+
+## FFT panels are locked to a data panel
+
+A `Panel` with a `source` is an FFT panel. Its `lines` *is* the source
+panel's list, the same object, which is what keeps the two in sync: edits,
+colours, added and removed lines all show in both with no copying. So:
+
+- Redraw with `_redraw_selected`, which redraws every panel in
+  `_linked(cell)`, data panel first: an FFT panel only draws lines whose
+  `shown` its data panel set, and leaves `shown` and `error` alone.
+  `_build_axes` likewise draws data panels before FFT panels.
+- Selecting a line goes through `_set_selected_line`, so the linked panels
+  select it too.
+- To break the link, use `_unlink`, which gives the panel copies of the lines.
+  `set_layout` does that when a source panel is removed, and `Panel.copy`
+  always makes an independent data panel.
+- There are no FFTs of FFT panels, and no fit-range picking on them.
 
 ## Things that look odd but are deliberate
 
@@ -96,7 +118,8 @@ app.fig.savefig("/some/scratch/dir/check.png")
 app.destroy()
 ```
 
-Wrap runs in `timeout`: an unpatched popup waits forever. Don't call
+Patch `messagebox.askyesno` too when making FFT panels. Wrap runs in
+`timeout`: an unpatched popup waits forever. Don't call
 `choose_folder`, which rewrites the user's settings file.
 
 ## Style

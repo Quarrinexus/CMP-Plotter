@@ -7,18 +7,22 @@ from tkinter import filedialog, messagebox, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
+import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
-from cmp_plotter import background, smoothing
-from cmp_plotter.columns import label, with_unit, without_unit
+from cmp_plotter import background, smoothing, spectrum
+from cmp_plotter.columns import label, lookup, with_unit, without_unit
 from cmp_plotter.model import Panel, legend_labels, line_colours, shared
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
 from cmp_plotter.format_dialog import FormatDialog
 from cmp_plotter.settings import load_settings, save_settings
-from cmp_plotter.widgets import SELECTED, ColourPopup, LayoutPicker
+from cmp_plotter.widgets import MAX_GRID, SELECTED, ColourPopup, LayoutPicker
+
+PARTNER = "#f0c987"  # frame around the panel locked to the selected one
+
 
 # Tk's X core fonts show these as '®' or the wrong symbol, though matplotlib
 # draws them fine; plain() swaps them for ASCII in text Tk shows.
@@ -27,6 +31,10 @@ PLAIN = str.maketrans({"\u2212": "-", "\u2013": "-", "\u0394": "d", "\u2192": "-
 
 def plain(text):
     return text.translate(PLAIN)
+
+
+class LineError(Exception):
+    """A line that couldn't be drawn; the text is as Line.error holds it."""
 
 
 def title(names):
@@ -65,6 +73,8 @@ class Plotter(tk.Tk):
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
         self.colour_popup = None
         self.picker = None  # the SpanSelector while a fit range is being dragged
+        self.fft_pick = None  # source cell while the user clicks a panel for its FFT
+        self.cache = {}  # id(Line) -> (settings, its x, y and labels), see _line_data
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
 
@@ -132,6 +142,7 @@ class Plotter(tk.Tk):
             side=tk.LEFT, padx=(6, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
+        self._fft_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
 
         # Saving sits at the bottom of the column, below the scrolling part.
@@ -366,6 +377,67 @@ class Plotter(tk.Tk):
                 box.bind(key, lambda _: self.apply_controls())
         self.fit_mode.show = body.refresh
 
+    def _fft_box(self, parent):
+        """A collapsed 'FFT' toggle: make an FFT panel of this one, or set one up."""
+        self.fft_window, self.fft_pad, self.f_max = tk.StringVar(), tk.StringVar(), tk.StringVar()
+
+        def text(is_open):
+            source = self.panel.source
+            used = f": of panel {self._number(source)}" if source and not is_open else ""
+            return f"FFT{used}"
+
+        body = self._collapsible(parent, (10, 0), text)
+        # For a data panel: the two ways to make its FFT.
+        make = ttk.Frame(body)
+        ttk.Button(make, text="FFT to new panel", command=self.fft_new_panel).pack(
+            anchor=tk.W, pady=(2, 0))
+        ttk.Button(make, text="FFT to existing panel...", command=self.fft_existing_panel).pack(
+            anchor=tk.W, pady=(4, 0))
+        ttk.Label(make, text="of this panel's lines, locked to it; use 1/x on the "
+                             "field for F in T", foreground="#9a9992", wraplength=230).pack(
+            anchor=tk.W)
+        # For an FFT panel: its settings.
+        settings = ttk.Frame(body)
+        source_label = ttk.Label(settings, foreground="#52514e", wraplength=230)
+        source_label.pack(anchor=tk.W, pady=(2, 0))
+        row = ttk.Frame(settings)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Window").pack(side=tk.LEFT)
+        window = ttk.Combobox(row, textvariable=self.fft_window, state="readonly", width=5,
+                              values=list(spectrum.WINDOWS.values()))
+        window.pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Label(row, text="Padding").pack(side=tk.LEFT)
+        pad = ttk.Combobox(row, textvariable=self.fft_pad, state="readonly", width=2,
+                           values=[str(n) for n in spectrum.PADDING])
+        pad.pack(side=tk.LEFT, padx=(4, 0))
+        row = ttk.Frame(settings)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="F max").pack(side=tk.LEFT)
+        f_max = ttk.Entry(row, textvariable=self.f_max, width=8)
+        f_max.pack(side=tk.LEFT, padx=(4, 8))
+        ttk.Label(row, text="blank: all", foreground="#9a9992").pack(side=tk.LEFT)
+        ttk.Button(settings, text="Unlink", command=self.unlink).pack(anchor=tk.W, pady=(6, 0))
+        for box in (window, pad):
+            box.bind("<<ComboboxSelected>>", lambda _: self.apply_fft())
+        for key in ("<Return>", "<KP_Enter>"):
+            f_max.bind(key, lambda _: self.apply_fft())
+
+        def refresh():
+            body.refresh()
+            p = self.panel
+            if p.source is None:
+                settings.pack_forget()
+                make.pack(anchor=tk.W, fill=tk.X)
+                return
+            make.pack_forget()
+            settings.pack(anchor=tk.W, fill=tk.X)
+            source_label["text"] = (f"FFT of panel {self._number(p.source)}, locked to it: "
+                                    "its lines are shared.")
+            self.fft_window.set(spectrum.WINDOWS[p.window])
+            self.fft_pad.set(str(p.pad))
+            self.f_max.set("" if p.f_max is None else f"{p.f_max:g}")
+        self.fft_window.show = refresh
+
     def _folder_row(self, parent, label, key):
         """'Data folder' etc.: the chosen path, with Browse... to change it."""
         ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(0, 2))
@@ -407,6 +479,7 @@ class Plotter(tk.Tk):
         self.profile, error = load_profile(self.data_dir)
         self._say(error, error=True)
         self.frames.clear()
+        self.cache.clear()
         self._refresh_runs()
         self._build_axes()
         self._load_controls()
@@ -473,6 +546,7 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
+        self.fft_window.show()
         self._say("")  # errors pop up instead; see apply_controls
         self._show_colour()
 
@@ -538,6 +612,8 @@ class Plotter(tk.Tk):
         keep = ""
         if before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn):
             keep = "xy" if before[6] == l.fitting else "x"
+            if self.panel.source:  # any change reshapes a spectrum
+                keep = "x"
         self._redraw_selected(keep)
         if l.error:  # a popup rather than text in the controls, to save room
             if l.run in self.frames:  # "Function error: ...", "Smoothing error: ", ...
@@ -547,20 +623,29 @@ class Plotter(tk.Tk):
             messagebox.showerror(title, plain(text), parent=self)
 
     def _redraw_selected(self, keep=""):
-        """Redraw the selected panel, keeping its x and/or y limits if `keep` says."""
-        ax = self.axes[self.selected]
-        view = ax.get_xlim(), ax.get_ylim()
-        # Only limits the user set (zooming turns autoscaling off); a view
-        # that was just fitted to the old data should refit to the new.
-        keep = "".join(a for a in keep if not getattr(ax, f"get_autoscale{a}_on")())
-        self._draw_panel(self.selected)
-        if keep and ax.lines:
+        """Redraw the selected panel and those locked to it, keeping the selected
+        one's x and/or y limits if `keep` says, and the others' x."""
+        views = {}
+        for cell in self._linked(self.selected):
+            ax = self.axes[cell]
+            wanted = keep if cell == self.selected else "x"
+            # Only limits the user set (zooming turns autoscaling off); a view
+            # that was just fitted to the old data should refit to the new.
+            wanted = "".join(a for a in wanted if not getattr(ax, f"get_autoscale{a}_on")())
+            views[cell] = wanted, ax.get_xlim(), ax.get_ylim()
+        for cell in views:  # the data panel first: the FFT panels use what it draws
+            self._draw_panel(cell)
+        kept = {cell: view for cell, view in views.items() if view[0] and self.axes[cell].lines}
+        if kept:
             self.toolbar.push_current()  # the full view, for the toolbar's Home
-            if "x" in keep:
-                ax.set_xlim(view[0])
-            if "y" in keep:
-                ax.set_ylim(view[1])
+            for cell, (wanted, xlim, ylim) in kept.items():
+                if "x" in wanted:
+                    self.axes[cell].set_xlim(xlim)
+                if "y" in wanted:
+                    self.axes[cell].set_ylim(ylim)
             self.toolbar.push_current()
+        for cell in self.axes:  # the locked panel's frame follows the selection
+            self._frame(cell)
         self._load_controls()  # loading a run can change the axis choices
         self._update_filename()
         self.canvas.draw()
@@ -569,8 +654,13 @@ class Plotter(tk.Tk):
 
     def _select_line(self, index):
         self.stop_picking()
-        self.panel.selected = index
+        self._set_selected_line(self.selected, index)
         self._load_controls()
+
+    def _set_selected_line(self, cell, index):
+        """Select line `index` in `cell` and the panels locked to it."""
+        for c in self._linked(cell):
+            self.panels[c].selected = index
 
     def _on_line_select(self, _):
         chosen = self.line_list.curselection()
@@ -583,14 +673,14 @@ class Plotter(tk.Tk):
         new = p.line.copy()
         new.colour = None
         p.lines.insert(p.selected + 1, new)
-        p.selected += 1
+        self._set_selected_line(self.selected, p.selected + 1)
         self._redraw_selected()
 
     def remove_line(self):
         p = self.panel
         if len(p.lines) > 1:
             del p.lines[p.selected]
-            p.selected = min(p.selected, len(p.lines) - 1)
+            self._set_selected_line(self.selected, min(p.selected, len(p.lines) - 1))
             self._redraw_selected()
 
     # --- drawing ----------------------------------------------------------
@@ -626,45 +716,85 @@ class Plotter(tk.Tk):
         self.fig.clear()
         grid = self.fig.subplots(self.rows, self.cols, squeeze=False)
         self.axes = {(r, c): grid[r, c] for r in range(self.rows) for c in range(self.cols)}
-        for cell in self.axes:
+        # Data panels first: FFT panels use what their data panel draws.
+        for cell in sorted(self.axes, key=lambda c: self.panels[c].source is not None):
             self._draw_panel(cell)
         self._update_filename()
         self.canvas.draw()
 
+    def _line_data(self, l):
+        """(x, y, x labels, y labels) for a line: its columns through its function,
+        background and smoothing. Raises LineError, with the text Line.error holds.
+
+        Kept per line, so a data panel and its FFT panels do the work once."""
+        cached = self.cache.get(id(l))
+        if cached and cached[0] == (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting):
+            return cached[1]
+        stage = "Function"
+        try:
+            df = self._load(l)
+            x, x_label = self._axis(df, l.x, l.x_fn)
+            y, y_label = self._axis(df, l.y, l.y_fn)
+            # Background first, so the fit sees the unsmoothed data and
+            # smoothing then works on what's left.
+            stage = "Background"
+            if l.fitting:
+                y = background.apply(x, y, *l.fitting)
+            if l.background == "subtract":
+                y_label = tuple(f"{t} − fit" for t in y_label)
+            stage = "Smoothing"
+            if l.smooth and l.in_x and l.span is None:
+                l.span = smoothing.span_for(x, l.window)
+            if l.smoothing:
+                y = smoothing.smooth(x, y, *l.smoothing)
+        except Exception as err:  # bad file or function shouldn't kill the window
+            raise LineError(f"{stage} error: {err}" if l.run in self.frames else str(err))
+        result = x, y, x_label, y_label
+        self.cache[id(l)] = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting), result
+        return result
+
     def _draw_panel(self, cell):
-        """Draw a panel's lines; problems are written into the panel itself."""
+        """Draw a panel's lines; problems are written into the panel itself.
+
+        An FFT panel draws each line's spectrum. Its lines' own errors are the
+        data panel's to report, so it leaves Line.shown and Line.error alone."""
         ax, p = self.axes[cell], self.panels[cell]
+        fft = p.source is not None
         ax.clear()
         self.artists[cell] = {}
-        drawn, x_labels, y_labels, errors = [], [], [], []
+        drawn, x_labels, y_labels, errors, resolutions = [], [], [], [], []
         for i, (l, colour) in enumerate(zip(p.lines, line_colours(p, self.profile.samples))):
-            l.shown, l.error = None, ""
+            if not fft:
+                l.shown, l.error = None, ""
             if not l.run:
                 continue
-            stage = "Function"
             try:
-                df = self._load(l)
-                x, x_label = self._axis(df, l.x, l.x_fn)
-                y, y_label = self._axis(df, l.y, l.y_fn)
-                # Background first, so the fit sees the unsmoothed data and
-                # smoothing then works on what's left.
-                stage = "Background"
-                if l.fitting:
-                    y = background.apply(x, y, *l.fitting)
-                if l.background == "subtract":
-                    y_label = tuple(f"{t} − fit" for t in y_label)
-                stage = "Smoothing"
-                if l.smooth and l.in_x and l.span is None:
-                    l.span = smoothing.span_for(x, l.window)
-                if l.smoothing:
-                    y = smoothing.smooth(x, y, *l.smoothing)
-            except Exception as err:  # bad file or function shouldn't kill the window
-                l.error = f"{stage} error: {err}" if l.run in self.frames else str(err)
-                errors.append(l.error)
+                x, y, x_label, y_label = self._line_data(l)
+            except LineError as err:
+                if not fft:
+                    l.error = str(err)
+                errors.append(str(err))
                 continue
-            # What's on screen, so Save names the plot shown rather than
-            # whatever is typed but not yet applied.
-            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
+            if fft:
+                if not l.shown:  # its data panel couldn't draw it
+                    continue
+                try:
+                    frequency, amplitude = spectrum.spectrum(x, y, p.window, p.pad)
+                except ValueError as err:
+                    errors.append(f"FFT error: {err}")
+                    continue
+                if p.f_max:
+                    below = frequency <= p.f_max
+                    frequency, amplitude = frequency[below], amplitude[below]
+                resolutions.append(spectrum.resolution(x[np.isfinite(y)]))
+                x, y = frequency, amplitude
+                unit, _ = lookup(self.profile.units, l.x)
+                x_label = (spectrum.frequency_label(l.x_fn, unit),) * 2
+                y_label = ("FFT amplitude  (units of y)",) * 2
+            else:
+                # What's on screen, so Save names the plot shown rather than
+                # whatever is typed but not yet applied.
+                l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
             # A shown fit is dashed, so it reads as a fit laid over the data.
             fit_style = {"ls": "--", "lw": 1.0} if l.background == "fit" else {}
             (artist,) = ax.plot(x, y, **({"lw": 0.7, "color": colour} | fit_style))
@@ -676,14 +806,24 @@ class Plotter(tk.Tk):
         if drawn:
             ax.set_xlabel(shared(x_labels))
             ax.set_ylabel(shared(y_labels))
-            ax.set_title(title(dict.fromkeys(l.run for l in drawn)))
+            heading = title(dict.fromkeys(l.run for l in drawn))
+            if fft:  # short, as FFT panels often sit beside or under their data
+                heading = f"FFT of panel {self._number(p.source)}"
+                if np.isfinite(resolutions[0]):  # the frequency resolution
+                    heading += f" · ΔF {resolutions[0]:.3g}"
+            ax.set_title(heading)
             ax.grid(True, lw=0.4, alpha=0.8)
             if len(drawn) > 1:
                 for artist, text in zip(ax.lines, legend_labels(drawn)):
                     artist.set_label(text)
                 ax.legend(fontsize=8)
+            if fft and errors:  # some lines drawn, others not: say why
+                ax.text(0.01, 0.99, errors[0], ha="left", va="top", transform=ax.transAxes,
+                        color="#b3261e", fontsize=8)
         elif errors:
             self._hint(ax, errors[0], colour="#b3261e", size=9)
+        elif fft:
+            self._hint(ax, f"Nothing plotted in panel {self._number(p.source)}")
         else:
             self._hint(ax, "Pick a dataset" if self.data_dir else "Pick a data folder")
         self._frame(cell)
@@ -698,11 +838,19 @@ class Plotter(tk.Tk):
         ax.set_yticks([])
 
     def _frame(self, cell):
-        """Orange frame on the selected panel, when there's more than one."""
-        on = cell == self.selected and len(self.axes) > 1
+        """Orange frame on the selected panel, when there's more than one, and a
+        paler one on the panels locked to it."""
+        several = len(self.axes) > 1
+        partners = self._linked(self.selected) if self.selected in self.panels else ()
+        if several and cell == self.selected:
+            colour, width = SELECTED, 2.5
+        elif several and cell in partners:
+            colour, width = PARTNER, 2.0
+        else:
+            colour, width = "black", 0.8
         for spine in self.axes[cell].spines.values():
-            spine.set_edgecolor(SELECTED if on else "black")
-            spine.set_linewidth(2.5 if on else 0.8)
+            spine.set_edgecolor(colour)
+            spine.set_linewidth(width)
 
     # --- panels and layout ------------------------------------------------
 
@@ -713,15 +861,18 @@ class Plotter(tk.Tk):
         cell = next((c for c, ax in self.axes.items() if ax is event.inaxes), None)
         if cell is None:
             return
+        if self.fft_pick is not None:  # the click chooses where an FFT goes
+            self._put_fft(self.fft_pick, cell)
+            return
         old, self.selected = self.selected, cell
         hit = next((i for artist, i in self.artists[cell].items()
                     if artist.contains(event)[0]), None)
         if hit is not None:
-            self.panels[cell].selected = hit
+            self._set_selected_line(cell, hit)
         elif cell == old:
             return  # clicked empty space in the panel already selected
-        self._frame(old)
-        self._frame(cell)
+        for c in self.axes:
+            self._frame(c)
         self._load_controls()
         self.canvas.draw()
 
@@ -735,6 +886,9 @@ class Plotter(tk.Tk):
             (r, c): self.panels.get((r, c)) or template.copy()
             for r in range(rows) for c in range(cols)
         }
+        for p in self.panels.values():
+            if p.source is not None and p.source not in self.panels:
+                self._unlink(p)  # its data panel is gone; keep what it showed
         if self.selected not in self.panels:
             self.selected = (0, 0)
         self.rows, self.cols = rows, cols
@@ -749,12 +903,118 @@ class Plotter(tk.Tk):
             l.span = l.fit_from = l.fit_to = None  # in the old x; meaningless now
         self._redraw_selected()
 
+    # --- FFT panels -------------------------------------------------------
+
+    def _number(self, cell):
+        """A panel's number as the user sees it: 1, 2, ... across then down."""
+        return cell[0] * self.cols + cell[1] + 1
+
+    def _linked(self, cell):
+        """`cell` and the panels locked to it: the data panel, then its FFT panels."""
+        source = self.panels[cell].source or cell
+        return [source] + [c for c, p in self.panels.items() if p.source == source]
+
+    def _fft_source(self):
+        """The selected panel, if it can have an FFT made of it."""
+        if self.panel.source is not None:
+            self._say("This panel is already an FFT; select its data panel.", error=True)
+            return None
+        return self.selected
+
+    def _fft_of(self, source):
+        """A new FFT panel locked to `source`: it shares the very same list of lines."""
+        p = self.panels[source]
+        return Panel(p.lines, p.selected, source=source)
+
+    @staticmethod
+    def _unlink(p):
+        """Make an FFT panel an ordinary data panel with its own copies of the lines."""
+        p.lines = [l.copy() for l in p.lines]
+        p.source = None
+
+    def fft_new_panel(self):
+        """Add a row below the grid, with the selected panel's FFT under it."""
+        self.stop_picking()
+        source = self._fft_source()
+        if source is None:
+            return
+        if self.rows >= MAX_GRID:
+            self._say("The layout is full; use FFT to existing panel.", error=True)
+            return
+        row = self.rows
+        for c in range(self.cols):
+            self.panels[row, c] = Panel()
+        self.panels[row, source[1]] = self._fft_of(source)
+        self.rows += 1
+        self.selected = (row, source[1])
+        self._build_axes()
+        self._load_controls()
+
+    def fft_existing_panel(self):
+        """Wait for a click on the panel the selected one's FFT should go in."""
+        self.stop_picking()
+        source = self._fft_source()
+        if source is None:
+            return
+        if len(self.panels) == 1:
+            self._say("There's only one panel; use FFT to new panel.", error=True)
+            return
+        self.fft_pick = source
+        self._say("Click the panel to put the FFT in; Esc cancels.")
+
+    def _put_fft(self, source, target):
+        self.stop_picking()
+        old = self.panels[target]
+        if target == source:
+            self._say("Click a different panel for the FFT.", error=True)
+            return
+        if old.source != source:
+            dependents = [c for c, p in self.panels.items() if p.source == target]
+            if (old.source is None and any(l.shown for l in old.lines)) or dependents:
+                also = (", and the FFT panels made from it will be unlinked"
+                        if dependents else "")
+                if not messagebox.askyesno(
+                        "Replace panel?",
+                        f"Replace panel {self._number(target)}'s lines with the FFT of "
+                        f"panel {self._number(source)}{also}?", parent=self):
+                    return
+            for c in dependents:
+                self._unlink(self.panels[c])
+            self.panels[target] = self._fft_of(source)
+        self.selected = target
+        self._build_axes()
+        self._load_controls()
+
+    def apply_fft(self):
+        """Copy the FFT box into the selected FFT panel and redraw it."""
+        p = self.panel
+        if p.source is None:
+            return
+        p.window = next(k for k, v in spectrum.WINDOWS.items() if v == self.fft_window.get())
+        p.pad = int(self.fft_pad.get())
+        try:
+            f_max = float(self.f_max.get()) if self.f_max.get().strip() else None
+            p.f_max = f_max if f_max is None or f_max > 0 else None
+        except ValueError:  # not a number: keep the old one (shown again below)
+            pass
+        self._redraw_selected()
+
+    def unlink(self):
+        """Make the selected FFT panel an ordinary panel with copies of the lines."""
+        if self.panel.source is not None:
+            self._unlink(self.panel)
+            self._build_axes()
+            self._load_controls()
+
     # --- fit range --------------------------------------------------------
 
     def pick_range(self):
         """Drag across the selected panel to set the selected line's fit range."""
         self.stop_picking()
         ax = self.axes[self.selected]
+        if self.panel.source is not None:
+            self._say("Pick the fit range on the data panel, not its FFT.", error=True)
+            return
         if not self.panel.line.shown:
             self._say("Plot the line first, then pick its fit range.", error=True)
             return
@@ -782,6 +1042,10 @@ class Plotter(tk.Tk):
             self._say("Range set; choose Show fit or Subtract to use it.")
 
     def stop_picking(self):
+        """End a fit-range drag or an FFT panel pick, if one is under way."""
+        if self.fft_pick is not None:
+            self.fft_pick = None
+            self._say("")
         if self.picker:
             self.picker.disconnect_events()
             self.picker.set_visible(False)  # its shaded span, if one was drawn
@@ -798,12 +1062,13 @@ class Plotter(tk.Tk):
         self.swatch["background"] = colours[p.selected]
         for i, colour in enumerate(colours):
             self.line_list.itemconfigure(i, foreground=colour, selectforeground=colour)
-        for artist, i in self.artists.get(self.selected, {}).items():
-            artist.set_color(colours[i])
-        ax = self.axes.get(self.selected)
-        if ax and ax.get_legend():  # the legend keeps its own copy of each colour
-            for handle, artist in zip(ax.get_legend().legend_handles, ax.lines):
-                handle.set_color(artist.get_color())
+        for cell in self._linked(self.selected):  # locked panels share the lines
+            for artist, i in self.artists.get(cell, {}).items():
+                artist.set_color(colours[i])
+            ax = self.axes.get(cell)
+            if ax and ax.get_legend():  # the legend keeps its own copy of each colour
+                for handle, artist in zip(ax.get_legend().legend_handles, ax.lines):
+                    handle.set_color(artist.get_color())
         if self.colour_popup and self.colour_popup.winfo_exists():
             self.colour_popup.show(colours[p.selected], move_picker)
         # Draw now rather than on idle: while the mouse is dragging in the
@@ -839,6 +1104,7 @@ class Plotter(tk.Tk):
         run, y, x, smoothed, fitted = first.parts()
         tail = f"_{background.file_part(*fitted)}" if fitted else ""
         tail += f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
+        tail += "_fft" if self.panels[0, 0].source else ""
         return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}{tail}.png"
 
     def _update_filename(self):
@@ -871,12 +1137,14 @@ class Plotter(tk.Tk):
             return
         # The selection frame is for the screen, not the saved figure.
         selected, self.selected = self.selected, None
-        self._frame(selected)
+        for cell in self.axes:
+            self._frame(cell)
         try:
             self.fig.savefig(out_dir / name, dpi=200)
         finally:
             self.selected = selected
-            self._frame(selected)
+            for cell in self.axes:
+                self._frame(cell)
             self.canvas.draw()
         self._say(f"Saved {out_dir.name}/{name}")
 

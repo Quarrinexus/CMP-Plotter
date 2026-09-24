@@ -58,6 +58,18 @@ After pulling changes, update it with `uv tool install --reinstall .`;
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick on plot** sets the range by dragging across the plot.
   The fit comes before smoothing.
+- **FFT**: **FFT to new panel** adds a row with the selected panel's spectrum
+  under it; **FFT to existing panel...** puts it in the panel you click next
+  (asking first if that panel has lines of its own). The two panels are locked
+  together: they share the same lines, so changing a line's axes, fit,
+  smoothing or colour in either redraws both, and adding or removing a line
+  does too. The spectrum is of each line as plotted (after its function,
+  background and smoothing) against its plotted x, so with `1/x` on the field
+  it's in F (T); amplitude is in y's units. Select the FFT panel for its
+  settings: Window (Hann or none), Padding (zero-padding, for smoother
+  peaks), F max, and **Unlink**, which turns it back into an ordinary panel
+  with its own copies of the lines. Its title gives the frequency resolution,
+  ΔF = 1 / (x range).
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
