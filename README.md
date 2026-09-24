@@ -2,9 +2,33 @@
 
 Interactive Tk window for plotting columns from `*.NNN.text` run files.
 
+## Install
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+2. Get the code:
+   ```bash
+   git clone https://github.com/<user>/QCM-Plotter.git
+   cd QCM-Plotter
+   ```
+3. Run it. The first run downloads Python 3.13 and the dependencies into
+   `.venv`; later runs start straight away.
+   ```bash
+   uv run qcm-plotter
+   ```
+
+To get a `qcm-plotter` command that works from any folder instead:
+
 ```bash
-uv run qcm-plotter
+uv tool install .
 ```
+
+After pulling changes, update it with `uv tool install --reinstall .`;
+`uv tool uninstall qcm-plotter` removes it.
+
+## Use
 
 - **Data / Output folder**: choose with Browse...; both are remembered in
   `~/.config/qcm-plotter/settings.json`.
