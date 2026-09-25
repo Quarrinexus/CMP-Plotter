@@ -259,6 +259,18 @@ class Plotter(tk.Tk):
         name_box.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=2)
         for key in ("<Return>", "<KP_Enter>"):
             name_box.bind(key, lambda _: self.save())
+        buttons = ttk.Frame(save)
+        buttons.pack(fill=tk.X, pady=(8, 0))
+        buttons.columnconfigure((0, 1), weight=1, uniform="button")
+        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
+        for i, button in enumerate((
+                ttk.Button(buttons, text="Layout...", command=self.choose_layout),
+                self.delete_button,
+                ttk.Button(buttons, text="Options...", command=self.open_save_options),
+                ttk.Button(buttons, text="Save figure", command=self.save))):
+            row, col = divmod(i, 2)
+            button.grid(row=row, column=col, sticky="ew", padx=(0, 3) if col == 0 else (3, 0),
+                        pady=(6, 0) if row else 0)
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
         plot = ttk.Frame(self)
@@ -1171,6 +1183,8 @@ class Plotter(tk.Tk):
                             lw=0.3, alpha=0.4)
                 ax.grid(True, which="major", axis=p.grid_axis, ls=p.grid_style,
                         lw=0.4, alpha=0.8)
+            if self.settings.get("ticks_in") is True:  # a preference for every panel
+                ax.tick_params(which="both", direction="in")
             if p.legend != "off" and (p.legend != "auto" or len(drawn) > 1):
                 for artist, l, text in zip(ax.lines, drawn, legend_labels(drawn)):
                     artist.set_label(l.label or text)
@@ -1460,7 +1474,8 @@ class Plotter(tk.Tk):
         if self.axes_popup and self.axes_popup.winfo_exists():
             self.axes_popup.lift()
         else:
-            self.axes_popup = AxesPopup(self, self.apply_axes, self.use_view)
+            self.axes_popup = AxesPopup(self, self.apply_axes, self.use_view,
+                                        self.settings.get("ticks_in") is True, self.set_ticks_in)
             self._undo_keys(self.axes_popup)
         self._show_axes()
 
@@ -1499,6 +1514,17 @@ class Plotter(tk.Tk):
         self._redraw_selected(keep="")
         if problem:  # after the redraw, which clears the status
             self._say(problem, error=True)
+
+    def set_ticks_in(self, inward):
+        """Point every panel's ticks inward, or back out, and remember it."""
+        self.settings["ticks_in"] = inward
+        try:
+            save_settings(self.settings)
+        except OSError as err:
+            self._say(f"Couldn't remember that: {err}", error=True)
+        for cell in self.axes:
+            self._draw_panel(cell)
+        self.canvas.draw()
 
     def use_view(self):
         """Fill the range boxes with what the selected panel shows now, e.g. after zooming."""

@@ -144,7 +144,9 @@ stay until it's done or cancelled.
   even for one line. **Grid**: **show** Off, Major (the default) or Major +
   minor (fainter lines between the major ones), on **axis** Both, x only or
   y only, in **style** Solid, Dashed or Dotted. Legend and Grid apply as you
-  click.
+  click. **Ticks**: **Point inward** turns every panel's tick marks to point
+  into the plot instead of out (off to start with); it's a preference for
+  all panels, kept in `settings.json` until you untick it.
 - **FFT** (Operations tab): **FFT to new panel** adds a row with the selected panel's spectrum
   under it; **FFT to existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The new panel is linked

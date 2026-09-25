@@ -487,7 +487,8 @@ class LineStylePopup(tk.Toplevel):
 class AxesPopup(tk.Toplevel):
     """The selected panel's ranges, title, axis labels, legend and grid, in their
     own window. Enter in a box, or a legend or grid button, calls `on_apply()`,
-    which reads `values()`; Use current view calls `on_use_view()`."""
+    which reads `values()`; Use current view calls `on_use_view()`. The Ticks
+    box is for every panel, not just this one: it calls `on_ticks(inward)`."""
 
     # Panel field -> its buttons' texts, for the Grid rows.
     GRID_ROWS = (("grid", "show", GRIDS), ("grid_axis", "axis", GRID_AXES),
@@ -495,7 +496,7 @@ class AxesPopup(tk.Toplevel):
 
     TEXTS = (("title", "Title"), ("x_label", "x label"), ("y_label", "y label"))
 
-    def __init__(self, parent, on_apply, on_use_view):
+    def __init__(self, parent, on_apply, on_use_view, ticks_in, on_ticks):
         super().__init__(parent)
         self.resizable(False, False)
         self.transient(parent)
@@ -554,6 +555,11 @@ class AxesPopup(tk.Toplevel):
                 ttk.Radiobutton(row, text=text, variable=self.choices[name], value=key,
                                 style="Toolbutton", command=on_apply).pack(
                     side=tk.LEFT, padx=(0, 4))
+        ttk.Label(body, text="Ticks", foreground=theme.MUTED).pack(anchor=tk.W, pady=(10, 0))
+        self.ticks_in = tk.BooleanVar(value=ticks_in)
+        ttk.Checkbutton(body, text="Point inward (all panels)", variable=self.ticks_in,
+                        command=lambda: on_ticks(self.ticks_in.get())).pack(
+            anchor=tk.W, pady=(2, 0))
         ttk.Label(body, text="Enter in a box applies", foreground=theme.HINT).pack(
             anchor=tk.W, pady=(10, 0))
         ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(6, 0))
