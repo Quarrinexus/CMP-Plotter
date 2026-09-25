@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from cmp_plotter.datasets import FormatError, parse
+from cmp_plotter import theme
 
 PREVIEW_LINES = 40  # of the raw file
 PREVIEW_ROWS = 5  # of the parsed table
@@ -25,10 +26,10 @@ class FormatDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=10)
         body.pack(fill=tk.BOTH, expand=True)
         ttk.Label(body, text=reason or "How the files in this data folder are laid out.",
-                  foreground="#b3261e" if reason else "#52514e",
+                  foreground=theme.ERROR if reason else theme.MUTED,
                   wraplength=640).pack(anchor=tk.W)
         ttk.Label(body, text=f"Start of {name} (column names orange, first data line blue):",
-                  foreground="#52514e").pack(anchor=tk.W, pady=(8, 2))
+                  foreground=theme.MUTED).pack(anchor=tk.W, pady=(8, 2))
         self.raw = self._scrolled(body, lambda frame: tk.Text(
             frame, height=14, width=100, wrap=tk.NONE, font="TkFixedFont"))
         self.raw.tag_configure("header", background=HEADER_COLOUR)
@@ -124,13 +125,13 @@ class FormatDialog(tk.Toplevel):
         except (tk.TclError, FormatError) as err:  # TclError: a spinbox isn't a number
             message = "line numbers must be whole numbers" if isinstance(err, tk.TclError) else err
             self.summary.configure(text=f"Can't read the file this way: {message}",
-                                   foreground="#b3261e")
+                                   foreground=theme.ERROR)
             self.table["columns"] = ()
             self.save_button.state(["disabled"])
             return
         plural = "s" if len(df.columns) != 1 else ""
         self.summary.configure(text=f"{len(df.columns)} column{plural}, {len(df)} rows",
-                               foreground="#2e7d32")
+                               foreground=theme.OK)
         self.table["columns"] = list(range(len(df.columns)))
         for i, column in enumerate(df.columns):
             self.table.heading(i, text=column)

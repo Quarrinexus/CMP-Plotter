@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
-from cmp_plotter import background, smoothing, spectrum
+from cmp_plotter import background, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
 from cmp_plotter.model import LINKED, Panel, legend_labels, line_colours, shared
 from cmp_plotter.profile import load_profile, save_format
@@ -19,7 +19,8 @@ from cmp_plotter.datasets import (FormatError, describe, detect_format, find_dat
                                   load_dataset, read_lines, run_number)
 from cmp_plotter.format_dialog import FormatDialog
 from cmp_plotter.settings import load_settings, save_settings
-from cmp_plotter.widgets import MAX_GRID, SELECTED, ColourPopup, LayoutPicker
+from cmp_plotter.widgets import (MAX_GRID, SELECTED, ColourPopup, LayoutPicker,
+                                 OverwriteDialog)
 
 PARTNER = "#f0c987"  # frame around the panel locked to the selected one
 
@@ -45,7 +46,7 @@ def title(names):
     return ", ".join(describe(n) for n in names)
 
 
-def swap_icon(colour="#52514e"):
+def swap_icon(colour=theme.MUTED):
     """A two-way arrow (up beside down) for the swap-axes button."""
     # Drawn, not typed: Tk's X core fonts can show arrow characters as '®'.
     image = Image.new("RGBA", (18, 22))
@@ -61,8 +62,7 @@ class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CMP Plotter")
-        # clam looks the same on every platform; set before anything reads a style.
-        ttk.Style().theme_use("clam")
+        theme.apply(self)  # before any widget is made or reads a style
         # Starts maximised. This is the size it returns to when un-maximised:
         # room for the controls with a section or two open, screen allowing.
         self.geometry(f"1150x{min(820, self.winfo_screenheight() - 80)}")
@@ -155,8 +155,11 @@ class Plotter(tk.Tk):
         self._link_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
 
-        # Saving sits at the bottom of the column, below the scrolling part.
-        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(16, 2))
+        # Saving sits at the bottom of the column, below the scrolling part,
+        # with the status above it so the buttons stay at the very bottom.
+        self.status = ttk.Label(save, wraplength=230)
+        self.status.pack(anchor=tk.W, pady=(12, 0))
+        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(8, 2))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
         ttk.Entry(save, textvariable=self.filename, width=26).pack(anchor=tk.W)
@@ -165,8 +168,6 @@ class Plotter(tk.Tk):
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
         ttk.Button(buttons, text="Save figure", command=self.save).pack(
             side=tk.LEFT, padx=(6, 0))
-        self.status = ttk.Label(save, wraplength=230)
-        self.status.pack(anchor=tk.W, pady=(12, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
         plot = ttk.Frame(self)
@@ -223,7 +224,7 @@ class Plotter(tk.Tk):
         arrow = tk.Canvas(toggle, width=10, height=10, highlightthickness=0,
                           background=ttk.Style().lookup("TFrame", "background"))
         arrow.pack(side=tk.LEFT, padx=(0, 4))
-        label = ttk.Label(toggle, foreground="#52514e")
+        label = ttk.Label(toggle, foreground=theme.MUTED)
         label.pack(side=tk.LEFT)
         body = ttk.Frame(parent)
 
@@ -231,7 +232,7 @@ class Plotter(tk.Tk):
             is_open = bool(body.winfo_manager())
             arrow.delete("all")
             points = (1, 2, 9, 2, 5, 8) if is_open else (2, 1, 8, 5, 2, 9)
-            arrow.create_polygon(points, fill="#52514e", outline="")
+            arrow.create_polygon(points, fill=theme.MUTED, outline="")
             label["text"] = text(is_open)
 
         def flip(_):
@@ -265,7 +266,7 @@ class Plotter(tk.Tk):
         entry = ttk.Entry(body, textvariable=var, width=16)
         entry.pack(anchor=tk.W)
         ttk.Label(body, text=f"e.g. 1/{name}, exp({name}) - Enter to apply",
-                  foreground="#9a9992").pack(anchor=tk.W)
+                  foreground=theme.HINT).pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             entry.bind(key, lambda _: (self.apply_controls(), body.refresh()))
         var.show_label = body.refresh
@@ -302,7 +303,7 @@ class Plotter(tk.Tk):
         order = ttk.Spinbox(orders, textvariable=self.order, from_=0, to=10, width=3,
                             command=self.apply_controls)
         order.pack(side=tk.LEFT, padx=(4, 0))
-        hint = ttk.Label(body, foreground="#9a9992", wraplength=230)
+        hint = ttk.Label(body, foreground=theme.HINT, wraplength=230)
         hint.pack(anchor=tk.W)
         for box in (window, order):
             for key in ("<Return>", "<KP_Enter>"):
@@ -380,7 +381,7 @@ class Plotter(tk.Tk):
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(4, 0))
         ttk.Button(row, text="Pick on plot", command=self.pick_range).pack(side=tk.LEFT)
-        ttk.Label(row, text="blank: whole line", foreground="#9a9992").pack(
+        ttk.Label(row, text="blank: whole line", foreground=theme.HINT).pack(
             side=tk.LEFT, padx=(8, 0))
         for box in (degree, start, end):
             for key in ("<Return>", "<KP_Enter>"):
@@ -404,11 +405,11 @@ class Plotter(tk.Tk):
         ttk.Button(make, text="FFT to existing panel...", command=self.fft_existing_panel).pack(
             anchor=tk.W, pady=(4, 0))
         ttk.Label(make, text="of this panel's lines, locked to it; use 1/x on the "
-                             "field for F in T", foreground="#9a9992", wraplength=230).pack(
+                             "field for F in T", foreground=theme.HINT, wraplength=230).pack(
             anchor=tk.W)
         # For an FFT panel: its settings.
         settings = ttk.Frame(body)
-        source_label = ttk.Label(settings, foreground="#52514e", wraplength=230)
+        source_label = ttk.Label(settings, foreground=theme.MUTED, wraplength=230)
         source_label.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(settings)
         row.pack(anchor=tk.W, pady=(4, 0))
@@ -425,7 +426,7 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="F max").pack(side=tk.LEFT)
         f_max = ttk.Entry(row, textvariable=self.f_max, width=8)
         f_max.pack(side=tk.LEFT, padx=(4, 8))
-        ttk.Label(row, text="blank: all", foreground="#9a9992").pack(side=tk.LEFT)
+        ttk.Label(row, text="blank: all", foreground=theme.HINT).pack(side=tk.LEFT)
         ttk.Button(settings, text="Unlink", command=self.unlink).pack(anchor=tk.W, pady=(6, 0))
         for box in (window, pad):
             box.bind("<<ComboboxSelected>>", lambda _: self.apply_fft())
@@ -457,7 +458,7 @@ class Plotter(tk.Tk):
             return f"Linked data{used}"
 
         body = self._collapsible(parent, (10, 0), text)
-        status = ttk.Label(body, foreground="#52514e", wraplength=230)
+        status = ttk.Label(body, foreground=theme.MUTED, wraplength=230)
         status.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(4, 0))
@@ -467,7 +468,7 @@ class Plotter(tk.Tk):
         ttk.Label(body, text="linked panels plot the same data (dataset, X, Y and "
                              "functions) in the same colours, line by line; smoothing, "
                              "background and ranges are each panel's own",
-                  foreground="#9a9992", wraplength=230).pack(anchor=tk.W)
+                  foreground=theme.HINT, wraplength=230).pack(anchor=tk.W)
 
         def refresh():
             body.refresh()
@@ -484,7 +485,9 @@ class Plotter(tk.Tk):
         row.pack(anchor=tk.W, fill=tk.X, pady=(0, 6))
         ttk.Button(row, text="Browse...",
                    command=lambda: self.choose_folder(key, label)).pack(side=tk.RIGHT)
-        path = ttk.Label(row, width=19, anchor=tk.W)
+        # Width 1: the name takes whatever the rest of the column leaves, so the
+        # row never widens the column (a long name is cut off).
+        path = ttk.Label(row, width=1, anchor=tk.W)
         path.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._show_folder(path, key)
         return path
@@ -493,7 +496,7 @@ class Plotter(tk.Tk):
         """Show the folder's name (the full path is too long for the column)."""
         folder = self.settings.get(key)
         widget["text"] = Path(folder).name or folder if folder else "(not set)"
-        widget["foreground"] = "#52514e" if folder else "#b3261e"
+        widget["foreground"] = theme.MUTED if folder else theme.ERROR
 
     def choose_folder(self, key, title):
         folder = filedialog.askdirectory(parent=self, title=f"Choose {title.lower()}",
@@ -870,9 +873,9 @@ class Plotter(tk.Tk):
                 ax.legend(fontsize=8)
             if fft and errors:  # some lines drawn, others not: say why
                 ax.text(0.01, 0.99, errors[0], ha="left", va="top", transform=ax.transAxes,
-                        color="#b3261e", fontsize=8)
+                        color=theme.ERROR, fontsize=8)
         elif errors:
-            self._hint(ax, errors[0], colour="#b3261e", size=9)
+            self._hint(ax, errors[0], colour=theme.ERROR, size=9)
         elif fft:
             self._hint(ax, f"Nothing plotted in panel {self._number(p.source)}")
         else:
@@ -881,7 +884,7 @@ class Plotter(tk.Tk):
         self.toolbar.update()  # new data, so reset the toolbar's zoom history
 
     @staticmethod
-    def _hint(ax, text, colour="#9a9992", size=14):
+    def _hint(ax, text, colour=theme.HINT, size=14):
         """Empty axes with a message in the middle, e.g. 'Pick a dataset'."""
         ax.text(0.5, 0.5, text, ha="center", va="center", wrap=True,
                 transform=ax.transAxes, color=colour, fontsize=size)
@@ -1272,7 +1275,7 @@ class Plotter(tk.Tk):
     # --- status and saving ------------------------------------------------
 
     def _say(self, text, error=False):
-        self.status.configure(text=text, foreground="#b3261e" if error else "#2e7d32")
+        self.status.configure(text=text, foreground=theme.ERROR if error else theme.OK)
 
     def _default_name(self):
         """The top-left panel's first line, e.g. run_005_M006_AH_vs_Norminal_FIeld.png."""
@@ -1291,6 +1294,20 @@ class Plotter(tk.Tk):
         if not current or current == self.auto_name:
             self.auto_name = self._default_name()
             self.filename.set(self.auto_name)
+
+    def _may_overwrite(self, name, out_dir):
+        """Ask before writing over a file, unless the user said not to ask again."""
+        if self.settings.get("overwrite_without_asking"):
+            return True
+        dialog = OverwriteDialog(self, name, out_dir.name)
+        self.wait_window(dialog)
+        if dialog.replace and dialog.dont_ask.get():
+            self.settings["overwrite_without_asking"] = True
+            try:
+                save_settings(self.settings)
+            except OSError as err:
+                self._say(f"Couldn't remember that: {err}", error=True)
+        return dialog.replace
 
     def save(self):
         if not any(l.shown for p in self.panels.values() for l in p.lines):
@@ -1312,6 +1329,9 @@ class Plotter(tk.Tk):
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as err:
             self._say(f"Can't use the output folder: {err}", error=True)
+            return
+        if (out_dir / name).exists() and not self._may_overwrite(name, out_dir):
+            self._say("Not saved: the file is already there.", error=True)
             return
         # The selection frame is for the screen, not the saved figure.
         selected, self.selected = self.selected, None

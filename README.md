@@ -142,7 +142,10 @@ keeps them.
   every line in the panel.
 - **Save figure**: writes to the output folder, named after the plot (e.g.
   `run_005_M006_AH_vs_1-over-Norminal_FIeld.png`) unless you type a name in
-  Save as. No extension means `.png`; `.pdf`, `.svg` etc. also work.
+  Save as. No extension means `.png`; `.pdf`, `.svg` etc. also work. If a
+  file of that name is already there, it asks before replacing it. Ticking
+  **Don't ask me again** there stops the question; to bring it back, delete
+  the `"overwrite_without_asking"` line from `settings.json`.
 
 ## Profiles
 

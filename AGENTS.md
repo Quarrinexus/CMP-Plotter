@@ -35,6 +35,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
 | `widgets.py` | colour picker, layout grid |
+| `theme.py` | the window's colours and ttk styling; use its names, not hex codes, in Tk widgets |
 
 ## How a line is drawn
 

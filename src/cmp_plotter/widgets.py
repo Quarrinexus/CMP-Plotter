@@ -7,6 +7,8 @@ from matplotlib.colors import hsv_to_rgb, rgb_to_hsv, to_hex, to_rgb
 import numpy as np
 from PIL import Image, ImageTk
 
+from cmp_plotter import theme
+
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels
 
@@ -124,7 +126,7 @@ class LayoutPicker(tk.Toplevel):
         self.on_pick = on_pick
         size = MAX_GRID * (self.CELL + self.GAP) + self.GAP
         self.grid_canvas = tk.Canvas(self, width=size, height=size, highlightthickness=0,
-                                     background="white", cursor="hand2")
+                                     background=theme.SURFACE, cursor="hand2")
         self.grid_canvas.pack(padx=10, pady=(10, 4))
         self.label = ttk.Label(self, anchor=tk.CENTER)
         self.label.pack(fill=tk.X, pady=(0, 10))
@@ -152,8 +154,8 @@ class LayoutPicker(tk.Toplevel):
         for (r, c), item in self.cells.items():
             on = r < rows and c < cols
             self.grid_canvas.itemconfigure(
-                item, fill=SELECTED if on else "#f4f3ef",
-                outline="#b5781c" if on else "#c9c8c2")
+                item, fill=SELECTED if on else theme.BACKGROUND,
+                outline="#b5781c" if on else theme.BORDER)
         self.label["text"] = f"{rows} × {cols}"
 
     def _hover(self, event):
@@ -163,3 +165,37 @@ class LayoutPicker(tk.Toplevel):
         rows, cols = self._cell_at(event)
         self.destroy()
         self.on_pick(rows, cols)
+
+
+class OverwriteDialog(tk.Toplevel):
+    """Modal. `replace` says whether to write over the file, and `dont_ask`
+    whether the box to stop asking was ticked (it's off to start with)."""
+
+    def __init__(self, parent, name, folder):
+        super().__init__(parent)
+        self.title("Replace file?")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.replace = False
+        self.dont_ask = tk.BooleanVar(value=False)
+        body = ttk.Frame(self, padding=14)
+        body.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(body, text=f"{name} already exists in {folder}.",
+                  wraplength=360).pack(anchor=tk.W)
+        ttk.Label(body, text="Replace it with this figure?",
+                  foreground=theme.MUTED).pack(anchor=tk.W, pady=(4, 0))
+        ttk.Checkbutton(body, text="Don't ask me again", variable=self.dont_ask).pack(
+            anchor=tk.W, pady=(12, 0))
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor=tk.E, pady=(14, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.RIGHT)
+        # Not the default: Enter shouldn't write over data by accident.
+        ttk.Button(buttons, text="Replace", command=self._replace).pack(
+            side=tk.RIGHT, padx=(0, 6))
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.grab_set()
+        self.focus_set()
+
+    def _replace(self):
+        self.replace = True
+        self.destroy()
