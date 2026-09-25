@@ -35,6 +35,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
 | `widgets.py` | colour picker, layout grid |
+| `session.py` | panels and lines to and from JSON-ready data, for session files and undo |
 | `theme.py` | the window's colours and ttk styling; use its names, not hex codes, in Tk widgets |
 
 ## How a line is drawn
@@ -119,6 +120,17 @@ with `keep=""` (as `apply_axes` does) or the old range comes back.
 The typed title and labels (`Panel.title`, `x_label`, `y_label`) are checked
 with `text_problem` before they're stored: bad mathtext only fails when the
 canvas draws, and on the real figure that would break every redraw after.
+
+## Sessions
+
+`session.dump` / `session.load` turn `self.panels` into plain data and back;
+`Plotter._restore` swaps it in. An FFT panel is saved as its source cell, and
+`load` rebuilds it sharing the data panel's list (never a copy: see FFT
+panels above). `load` drops unknown or mistyped fields and menu values that
+aren't keys, and raises ValueError for anything that isn't a session, before
+anything changes. A new `Line` or `Panel` field is saved automatically unless
+it's in `session.SKIP`; one whose value must be a menu key goes in
+`session.CHOICES` too.
 
 ## Things that look odd but are deliberate
 

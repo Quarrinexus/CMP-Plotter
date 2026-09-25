@@ -1,5 +1,6 @@
 """Interactive plotter window: pick datasets and axes, plot, save. See README.md."""
 
+import json
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -12,7 +13,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
-from cmp_plotter import background, smoothing, spectrum, theme
+from cmp_plotter import background, session, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
 from cmp_plotter.model import (LEGENDS, LINKED, MARKERS, RANGES, STYLES, Panel,
                                clear_ranges, legend_labels, line_colours, shared)
@@ -192,6 +193,12 @@ class Plotter(tk.Tk):
         buttons.pack(anchor=tk.W, pady=(8, 0))
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
         ttk.Button(buttons, text="Save figure", command=self.save).pack(
+            side=tk.LEFT, padx=(6, 0))
+        buttons = ttk.Frame(save)
+        buttons.pack(anchor=tk.W, pady=(6, 0))
+        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
+            side=tk.LEFT)
+        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
             side=tk.LEFT, padx=(6, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
@@ -703,13 +710,19 @@ class Plotter(tk.Tk):
 
     def _reload_folder(self):
         """Re-read the data folder's profile and files, then redraw everything."""
-        self.profile, error = load_profile(self.data_dir)
+        error = self._read_folder()
+        self._build_axes()
+        self._load_controls()
         self._say(error, error=True)
+
+    def _read_folder(self):
+        """Forget what was read from the old data folder and read the new one's
+        profile and file list. Returns the profile's error, if any."""
+        self.profile, error = load_profile(self.data_dir)
         self.frames.clear()
         self.cache.clear()
         self._refresh_runs()
-        self._build_axes()
-        self._load_controls()
+        return error
 
     def edit_format(self, name=None, reason=""):
         """Open the Data format window on dataset `name` (default: the selected one)."""
@@ -1540,6 +1553,93 @@ class Plotter(tk.Tk):
         self.panel.line.colour = None
         self._sync_inputs(self.selected)
         self._show_colour()
+
+    # --- sessions ---------------------------------------------------------
+
+    def _restore(self, state, selected=None):
+        """Replace the panels with those in `state` (from session.dump). Raises
+        ValueError, changing nothing, if it isn't one."""
+        rows, cols, panels = session.load(state)
+        self.stop_picking()
+        for cell, p in panels.items():  # keep the line each panel had selected
+            if cell in self.panels:
+                p.selected = min(self.panels[cell].selected, len(p.lines) - 1)
+        self.rows, self.cols, self.panels = rows, cols, panels
+        if selected in panels:
+            self.selected = selected
+        elif self.selected not in panels:
+            self.selected = (0, 0)
+        self.cache.clear()  # keyed on id(Line); the old lines are gone
+        self._build_axes()
+        self._load_controls()
+
+    def save_session(self, path=None):
+        """Write the layout, panels and lines to a JSON file, to open again later."""
+        self.stop_picking()
+        if path is None:
+            stem = Path(self.filename.get().strip() or "plot").stem
+            path = filedialog.asksaveasfilename(
+                parent=self, title="Save session", defaultextension=".json",
+                initialdir=self.settings.get("output_dir") or Path.home(),
+                initialfile=f"{stem}-session.json",
+                filetypes=[("CMP Plotter session", "*.json"), ("All files", "*")])
+            if not path:  # cancelled; the file dialog asked about replacing already
+                return
+        data = {"cmp_plotter_session": session.VERSION, "data_dir": self.data_dir,
+                "selected": session.cell_key(self.selected),
+                **session.dump(self.panels, self.rows, self.cols)}
+        if self.filename.get().strip() != self.auto_name:  # a name the user typed
+            data["save_as"] = self.filename.get().strip()
+        try:
+            Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        except OSError as err:
+            self._say(f"Couldn't save the session: {err}", error=True)
+            return
+        self._say(f"Saved session {Path(path).name}")
+
+    def open_session(self, path=None):
+        """Open a session file: its data folder (if it's still there), layout and lines."""
+        self.stop_picking()
+        if path is None:
+            path = filedialog.askopenfilename(
+                parent=self, title="Open session",
+                initialdir=self.settings.get("output_dir") or Path.home(),
+                filetypes=[("CMP Plotter session", "*.json"), ("All files", "*")])
+            if not path:
+                return
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or "cmp_plotter_session" not in data:
+                raise ValueError("it isn't a CMP Plotter session")
+            if not isinstance(data["cmp_plotter_session"], int) \
+                    or data["cmp_plotter_session"] > session.VERSION:
+                raise ValueError("it's from a newer version of the plotter")
+            session.load(data)  # check it all before changing anything
+        except (OSError, ValueError) as err:
+            self._say(f"Couldn't open {Path(path).name}: {err}", error=True)
+            return
+        note, folder = "", data.get("data_dir")
+        if isinstance(folder, str) and folder != self.data_dir:
+            if Path(folder).is_dir():
+                self.settings["data_dir"] = folder
+                try:
+                    save_settings(self.settings)
+                except OSError as err:
+                    note = f"; couldn't remember its data folder: {err}"
+                self._show_folder(self.data_label, "data_dir")
+                if error := self._read_folder():
+                    note = f"; {error}"
+            else:
+                note = f"; its data folder {folder} isn't there, so using this one"
+        selected = data.get("selected")
+        try:
+            selected = session.key_cell(selected)
+        except (AttributeError, ValueError):
+            selected = None
+        self._restore(data, selected)
+        if isinstance(data.get("save_as"), str):
+            self.filename.set(data["save_as"])
+        self._say(f"Opened session {Path(path).name}{note}", error=bool(note))
 
     # --- status and saving ------------------------------------------------
 

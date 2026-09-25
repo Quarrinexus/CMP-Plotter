@@ -161,6 +161,11 @@ keeps them.
   file of that name is already there, it asks before replacing it. Ticking
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
+- **Open session... / Save session...** (under the save buttons): a session
+  is a `.json` file holding the layout and every panel and line, with its
+  settings, FFT panels, links, ranges, labels and styles, plus the data
+  folder and a typed Save as name. Opening one switches to its data folder if
+  that's still there. The data itself isn't in it, only which files to read.
 
 ### Keyboard
 
