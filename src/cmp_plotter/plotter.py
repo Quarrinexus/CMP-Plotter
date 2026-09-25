@@ -14,8 +14,8 @@ from PIL import Image, ImageDraw, ImageTk
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
 from cmp_plotter import background, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import (LEGENDS, LINKED, RANGES, Panel, clear_ranges,
-                               legend_labels, line_colours, shared)
+from cmp_plotter.model import (LEGENDS, LINKED, MARKERS, RANGES, STYLES, Panel,
+                               clear_ranges, legend_labels, line_colours, shared)
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -168,6 +168,7 @@ class Plotter(tk.Tk):
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
+        self._style_box(controls)
         # Above: the selected line. Below: the selected panel.
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._axes_box(controls)
@@ -462,6 +463,55 @@ class Plotter(tk.Tk):
                 box.bind(key, lambda _: self.apply_controls())
         self.fit_mode.show = body.refresh
 
+    def _style_box(self, parent):
+        """A collapsed 'Line style' toggle: line, width, marker and legend name."""
+        self.line_style, self.line_width = tk.StringVar(), tk.StringVar()
+        self.marker, self.line_label = tk.StringVar(), tk.StringVar()
+
+        def text(is_open):
+            l = self.panel.line
+            changed = (l.style != "auto" or l.width is not None or l.marker or l.label)
+            return "Line style: changed" if changed and not is_open else "Line style"
+
+        body = self._collapsible(parent, (10, 0), text)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(row, text="Line", width=6).pack(side=tk.LEFT)
+        style = ttk.Combobox(row, textvariable=self.line_style, state="readonly", width=9,
+                             values=list(STYLES.values()))
+        style.pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Label(row, text="Width").pack(side=tk.LEFT)
+        width = ttk.Spinbox(row, textvariable=self.line_width, from_=0.1, to=10,
+                            increment=0.1, format="%.1f", width=4, command=self.apply_controls)
+        width.pack(side=tk.LEFT, padx=(4, 0))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Marker", width=6).pack(side=tk.LEFT)
+        marker = ttk.Combobox(row, textvariable=self.marker, state="readonly", width=9,
+                              values=list(MARKERS.values()))
+        marker.pack(side=tk.LEFT, padx=(4, 0))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Name", width=6).pack(side=tk.LEFT)
+        name = ttk.Entry(row, textvariable=self.line_label, width=22)
+        name.pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Label(body, text="in the legend; blank: automatic", foreground=theme.HINT).pack(
+            anchor=tk.W)
+        for box in (style, marker):
+            box.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        for box in (width, name):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_controls())
+
+        def refresh():
+            body.refresh()
+            l = self.panel.line
+            self.line_style.set(STYLES[l.style])
+            self.line_width.set(f"{l.auto_width if l.width is None else l.width:g}")
+            self.marker.set(MARKERS[l.marker])
+            self.line_label.set(l.label)
+        self.style_show = refresh
+
     def _axes_box(self, parent):
         """A collapsed 'Axes' toggle: the selected panel's x and y ranges."""
         self.ranges = {name: tk.StringVar() for name in RANGES}
@@ -723,6 +773,7 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
+        self.style_show()
         self.ranges_show()
         self.fft_window.show()
         self.link_status()
@@ -734,6 +785,8 @@ class Plotter(tk.Tk):
         self.line_list.delete(0, tk.END)
         for l, colour in zip(p.lines, colours):
             name = f"{l.y} · {run_number(l.run) or l.run}" if l.run else "(no dataset)"
+            if l.label:
+                name = f"{plain(l.label)} · {name}"
             if l.smoothing:
                 name += f" · {plain(smoothing.describe(*l.smoothing))}"
             if l.fitting:
@@ -750,6 +803,7 @@ class Plotter(tk.Tk):
         self.stop_picking()
         l = self.panel.line
         before, old_x = l.shown, (l.x, l.x_fn)
+        old_auto = l.auto_width  # what the width box showed when it wasn't set
         old_y = (l.y, l.y_fn, l.background == "subtract")
         l.run = self.run.get()
         l.x, l.y = without_unit(self.x.get()) or l.x, without_unit(self.y.get()) or l.y
@@ -774,6 +828,19 @@ class Plotter(tk.Tk):
                 setattr(l, attr, float(var.get()) if var.get().strip() else None)
             except ValueError:
                 pass
+        l.style = next(k for k, v in STYLES.items() if v == self.line_style.get())
+        l.marker = next(k for k, v in MARKERS.items() if v == self.marker.get())
+        try:
+            width = float(self.line_width.get())
+            if width > 0 and (l.width is not None or width != old_auto):
+                l.width = width
+        except ValueError:
+            pass
+        label, label_problem = self.line_label.get().strip(), ""
+        if label and (why := text_problem(label)):
+            label_problem = f"Can't draw that name: {plain(why)}"
+        else:
+            l.label = label
         if (l.x, l.x_fn) != old_x:
             # A window or range in the old x means nothing in the new one.
             l.span = l.fit_from = l.fit_to = None
@@ -800,6 +867,8 @@ class Plotter(tk.Tk):
                 keep = "x"
             others = "x"  # the other panels redrawn plot the same data as before
         self._redraw_selected(keep, others)
+        if label_problem:  # after the redraw, which clears the status
+            self._say(label_problem, error=True)
         if l.error:  # a popup rather than text in the controls, to save room
             if l.run in self.frames:  # "Function error: ...", "Smoothing error: ", ...
                 title, _, text = l.error.partition(": ")
@@ -861,7 +930,7 @@ class Plotter(tk.Tk):
         at = self.panel.selected + 1
         for lines in self._group_lists(self.selected):
             new = lines[at - 1].copy()
-            new.colour = None
+            new.colour, new.label = None, ""  # its own colour and name
             lines.insert(at, new)
         self._set_selected_line(self.selected, at)
         self._redraw_selected()
@@ -989,9 +1058,7 @@ class Plotter(tk.Tk):
                 # What's on screen, so Save names the plot shown rather than
                 # whatever is typed but not yet applied.
                 l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
-            # A shown fit is dashed, so it reads as a fit laid over the data.
-            fit_style = {"ls": "--", "lw": 1.0} if l.background == "fit" else {}
-            (artist,) = ax.plot(x, y, **({"lw": 0.7, "color": colour} | fit_style))
+            (artist,) = ax.plot(x, y, color=colour, **l.plot_style())
             self.artists[cell][artist] = i
             drawn.append(l)
             x_labels.append(x_label)
@@ -1008,8 +1075,8 @@ class Plotter(tk.Tk):
             ax.set_title(p.title or heading)
             ax.grid(True, lw=0.4, alpha=0.8)
             if p.legend != "off" and (p.legend != "auto" or len(drawn) > 1):
-                for artist, text in zip(ax.lines, legend_labels(drawn)):
-                    artist.set_label(text)
+                for artist, l, text in zip(ax.lines, drawn, legend_labels(drawn)):
+                    artist.set_label(l.label or text)
                 if p.legend == "outside":  # constrained layout makes room for it
                     ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.02, 0.5))
                 else:

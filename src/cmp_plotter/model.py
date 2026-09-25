@@ -39,11 +39,31 @@ class Line:
     fit_to: float | None = None
     order: int = 2  # Savitzky–Golay polynomial order
     colour: str | None = None  # None: picked automatically, see line_colours
+    # How it's drawn; not in `shown`, so changing them keeps the zoom.
+    style: str = "auto"  # a key of STYLES
+    width: float | None = None  # None: auto_width
+    marker: str = ""  # a key of MARKERS
+    label: str = ""  # its name in the legend; "": the automatic one
     shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing, fitting) as last drawn
     error: str = ""  # why the last draw failed, if it did
 
     def copy(self):
         return replace(self, shown=None, error="")
+
+    @property
+    def auto_width(self):
+        """The width when none is set: a shown fit is a little heavier, as it's dashed."""
+        return 1.0 if self.background == "fit" else 0.7
+
+    def plot_style(self):
+        """matplotlib keywords for its line and markers (colour aside)."""
+        dashed = self.background == "fit"  # a shown fit reads as a fit laid over the data
+        style = ("--" if dashed else "-") if self.style == "auto" else self.style
+        kwargs = {"ls": "None" if style == "none" else style,
+                  "lw": self.auto_width if self.width is None else self.width}
+        if self.marker:
+            kwargs |= {"marker": self.marker, "ms": 3}
+        return kwargs
 
     @property
     def smoothing(self):
@@ -98,6 +118,12 @@ class Panel:
         the panel's: ranges and such start fresh)."""
         return Panel([l.copy() for l in self.lines], self.selected)
 
+
+# Line style and marker -> the text in their menus.
+STYLES = {"auto": "Auto", "-": "Solid", "--": "Dashed", ":": "Dotted", "-.": "Dash-dot",
+          "none": "None"}
+MARKERS = {"": "None", ".": "Dots", "o": "Circles", "s": "Squares", "^": "Triangles",
+           "x": "Crosses"}
 
 RANGES = ("x_min", "x_max", "y_min", "y_max")
 

@@ -109,7 +109,11 @@ keeps them.
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick on plot** sets the range by dragging across the plot.
   The fit comes before smoothing.
-- **Axes**: per panel, under Background. Type an x or y range (**from** /
+- **Line style**: per line, under Background. **Line** (Auto is solid, or
+  dashed for a shown fit; None leaves only the markers), **Width**,
+  **Marker**, and **Name**, its name in the legend and the Lines list
+  (blank: automatic; mathtext works). Changing these keeps the zoom.
+- **Axes**: per panel, under Line style. Type an x or y range (**from** /
   **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
   function; leave an end blank to let it follow the data. **Use current
   view** fills the boxes from what the panel shows, e.g. after zooming, to
