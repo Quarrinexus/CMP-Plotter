@@ -267,6 +267,7 @@ class Plotter(tk.Tk):
 
     def _select_panel(self, cell):
         self.selected = cell
+        self.merging = False  # as in _select_line
         for c in self.axes:
             self._frame(c)
         self._load_controls()
@@ -492,7 +493,7 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="Line", width=6).pack(side=tk.LEFT)
         style = ttk.Combobox(row, textvariable=self.line_style, state="readonly", width=9,
                              values=list(STYLES.values()))
-        style.pack(side=tk.LEFT, padx=(4, 10))
+        style.pack(side=tk.LEFT, padx=(4, 6))
         ttk.Label(row, text="Width").pack(side=tk.LEFT)
         width = ttk.Spinbox(row, textvariable=self.line_width, from_=0.1, to=10,
                             increment=0.1, format="%.1f", width=4, command=self.apply_controls)
@@ -929,6 +930,7 @@ class Plotter(tk.Tk):
 
     def _select_line(self, index):
         self.stop_picking()
+        self.merging = False  # a colour picked for another line is another step
         self._set_selected_line(self.selected, index)
         self._load_controls()
 
@@ -1322,9 +1324,11 @@ class Plotter(tk.Tk):
         p = self.panel
         for name, var in self.ranges.items():
             try:
-                setattr(p, name, float(var.get()) if var.get().strip() else None)
+                value = float(var.get()) if var.get().strip() else None
             except ValueError:  # not a number: keep the old one (shown again below)
-                pass
+                continue
+            if value is None or np.isfinite(value):  # inf or nan would break drawing
+                setattr(p, name, value)
         problem = ""
         for name, var in self.texts.items():
             text = var.get().strip()

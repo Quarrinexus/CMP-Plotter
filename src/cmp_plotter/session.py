@@ -1,6 +1,7 @@
 """The panels and their lines as plain JSON-ready data, for session files and undo."""
 
 from dataclasses import fields
+import math
 
 from cmp_plotter import background, smoothing, spectrum
 from cmp_plotter.model import LEGENDS, MARKERS, STYLES, Line, Panel
@@ -15,6 +16,10 @@ SKIP = {"shown", "error", "lines", "selected", "source"}
 CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                   "style": STYLES, "marker": MARKERS},
            Panel: {"legend": LEGENDS, "window": spectrum.WINDOWS, "pad": spectrum.PADDING}}
+
+# Numbers that only make sense above 0, per class as for CHOICES; the
+# controls refuse the rest too.
+POSITIVE = {Line: {"width", "window", "span"}, Panel: {"f_max"}}
 
 
 def cell_key(cell):
@@ -52,6 +57,8 @@ def _allowed(f, value):
     if isinstance(value, bool):
         return "bool" in kind
     if isinstance(value, (int, float)):
+        if not math.isfinite(value):  # JSON's NaN and Infinity would break drawing
+            return False
         return "float" in kind or ("int" in kind and isinstance(value, int))
     return isinstance(value, str) and "str" in kind
 
@@ -66,6 +73,8 @@ def _build(cls, data, **extra):
             continue
         value = data[f.name]
         if f.name in CHOICES[cls] and value not in CHOICES[cls][f.name]:
+            continue
+        if f.name in POSITIVE[cls] and value is not None and value <= 0:
             continue
         kwargs[f.name] = value
     return cls(**kwargs, **extra)
