@@ -253,7 +253,7 @@ class Plotter(tk.Tk):
         # cut off "Operations"); width 1, so the strip never widens the column.
         font = tkfont.Font(self, font=ttk.Style().lookup("Tab.Toolbutton", "font") or "TkDefaultFont")
         for i, name in enumerate(("Process", "Splicing", "Operations", "Linking")):
-            strip.columnconfigure(i, weight=font.measure(name) + 8)  # + the padding
+            strip.columnconfigure(i, weight=font.measure(name) + 4)  # + the padding
             ttk.Radiobutton(strip, text=name, value=name, variable=self.tab, width=1,
                             style="Tab.Toolbutton", command=self._show_tab).grid(
                 row=0, column=i, sticky="ew", padx=(0 if i == 0 else 2, 0))
@@ -623,19 +623,23 @@ class Plotter(tk.Tk):
         start.pack(side=tk.LEFT, padx=(4, 4))
         ttk.Label(row, text="to").pack(side=tk.LEFT)
         end = ttk.Entry(row, textvariable=self.cut_to, width=7)
-        end.pack(side=tk.LEFT, padx=(4, 6))
-        ttk.Button(row, text="Add", width=5, command=self.add_cut).pack(side=tk.LEFT)
-        ttk.Button(row, text="Pick", width=5,
-                   command=lambda: self.pick_range("cut")).pack(side=tk.LEFT, padx=(4, 0))
+        end.pack(side=tk.LEFT, padx=(4, 0))
         for box in (start, end):
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.add_cut(replace=True))
-        # The ranges, with Delete beside them. Width 1: the list takes the
-        # room the column leaves it, never widening it.
+        # Their own row, in equal shares of whatever width the column has
+        # (width 1), as beside the boxes they'd widen it.
+        buttons = ttk.Frame(body)
+        buttons.pack(fill=tk.X, pady=(6, 0))
+        buttons.columnconfigure((0, 1, 2), weight=1, uniform="cut")
+        for i, (text, command) in enumerate((("Add", self.add_cut),
+                                             ("Pick", lambda: self.pick_range("cut")),
+                                             ("Delete", self.delete_cut))):
+            ttk.Button(buttons, text=text, width=1, command=command).grid(
+                row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
+        # The ranges. Width 1: the list takes the room the column leaves it.
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, fill=tk.X, pady=(6, 0))
-        ttk.Button(row, text="Delete", width=6, command=self.delete_cut).pack(
-            side=tk.RIGHT, anchor=tk.N, padx=(6, 0))
         # Plain text, so the chosen row in the theme's colours (the Lines list
         # picks each row's own foreground instead).
         self.cut_list = tk.Listbox(row, height=4, width=1, exportselection=False,
@@ -649,7 +653,7 @@ class Plotter(tk.Tk):
         self.cut_list.bind("<<ListboxSelect>>", lambda _: self._choose_cut())
         for text in ("in the plotted x; a blank end: no limit",
                      "click a range, then Enter changes it",
-                     "before fits, smoothing, FFT; Off to see all"):
+                     "cut before fits, smoothing and FFT"):
             ttk.Label(body, text=text, foreground=theme.HINT).pack(anchor=tk.W)
 
     def _show_cuts(self):

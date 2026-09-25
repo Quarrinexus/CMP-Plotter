@@ -59,7 +59,7 @@ def apply(root):
               darkcolor=[("selected", ACCENT_SOFT), ("active", HOVER)])
     style.configure("Box.TButton", padding=0)
     # The controls column's tab strip: Toolbuttons, a little narrower, so four fit.
-    style.configure("Tab.Toolbutton", padding=(4, 4))
+    style.configure("Tab.Toolbutton", padding=(2, 4))
     style.configure("TScale", background=SURFACE, bordercolor=BORDER_HOVER, gripsize=0,
                     troughcolor=BORDER, lightcolor=SURFACE, darkcolor=SURFACE, sliderlength=14)
     style.map("TScale", background=[("pressed", PRESSED), ("active", HOVER)])
