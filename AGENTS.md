@@ -11,9 +11,23 @@ this file is what isn't obvious from the code.
 uv run goose-plotter
 ```
 
-Python 3.13, managed by uv; dependencies are in `pyproject.toml`. There's no
-test suite. Check changes by driving the real window from a script (below)
-and by looking at a saved figure or a screenshot.
+Python 3.13, managed by uv; dependencies are in `pyproject.toml`.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+`tests/` runs on made-up data (`conftest.write_run`: a file laid out like
+the real runs, B from 28 T to 4 T with an oscillation of 50 T in 1/B), so it
+needs none of the author's. The calculation modules are tested directly;
+`test_plotter.py` builds the real window with the `app` fixture, which
+points it at a temporary data folder and settings file (never the user's)
+and answers `askyesno`. Where Tk has no display those tests are skipped.
+Add a test with each change, and still look at a saved figure or a
+screenshot for anything visual; the width test only checks that every tab
+leaves the controls column the same width.
 
 No data ships with the repo. On the author's machine it sits inside a
 Huairou-CMP folder whose `Analysis/data` holds real runs
@@ -219,6 +233,8 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
   doesn't shift.
 
 ## Testing by script
+
+For a look at something the tests don't cover, or on the real data:
 
 Build the window, patch the popups so they can't block, drive the controls,
 then read the state:
