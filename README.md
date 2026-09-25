@@ -90,6 +90,10 @@ Background), **Operations** (FFT, Derivative), **Linking** (Linked data) and
 **Files** (folders, Data format, sessions); their sections start open. If the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
+Other messages show above the buttons at the bottom of the column: green
+ones (Saved ..., Undone) clear after 10 seconds, red ones stay until the
+next message, and instructions for a pick under way (Click the panel ...)
+stay until it's done or cancelled.
 
 - **Data / Output folder** (Files tab): choose with Browse...; both are
   remembered in `~/.config/goose-plotter/settings.json` (see Windows above).

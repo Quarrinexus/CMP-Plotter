@@ -119,6 +119,7 @@ class Plotter(tk.Tk):
         self.undo_state = self.last_state = None
         self.merging = False  # the last change was a colour pick; see _changed
         self.restoring = False
+        self.status_timer = None  # the pending clear of an info message, see _say
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
 
@@ -1909,8 +1910,24 @@ class Plotter(tk.Tk):
 
     # --- status and saving ------------------------------------------------
 
+    INFO_SECONDS = 10  # how long an info message stays
+
     def _say(self, text, error=False):
+        """Show `text` under the controls. Info clears itself after INFO_SECONDS;
+        errors stay until the next message, so they aren't missed."""
+        if self.status_timer:
+            self.after_cancel(self.status_timer)
+            self.status_timer = None
         self.status.configure(text=text, foreground=theme.ERROR if error else theme.OK)
+        if text and not error:
+            self.status_timer = self.after(self.INFO_SECONDS * 1000, self._expire_status)
+
+    def _expire_status(self):
+        self.status_timer = None
+        # Instructions for a pick under way ("Click the panel...") stay until
+        # it ends, which clears them.
+        if self.derive_pick is None and self.link_pick is None and not self.picker:
+            self.status.configure(text="")
 
     def _default_name(self):
         """The top-left panel's first line, e.g. run_005_M006_AH_vs_Norminal_FIeld.png."""
