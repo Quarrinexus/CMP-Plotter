@@ -133,6 +133,11 @@ def _load_old(saved, grid):
         lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines)
         panels[cell].operation = ""
+        # X and Y axis then covered their Function boxes too.
+        words = panels[cell].sync.split()
+        panels[cell].sync = " ".join(
+            k for k in SYNC
+            if k in words or (k == "x_fn" and "x" in words) or (k == "y_fn" and "y" in words))
     groups = [p.link_group for p in panels.values() if p.link_group is not None]
     for cell in grid:
         data = saved.get(cell)

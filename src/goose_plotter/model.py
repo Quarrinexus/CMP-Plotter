@@ -13,11 +13,12 @@ from goose_plotter.smoothing import describe as describe_smoothing
 
 # What linked panels can share, line by line: a panel's `sync` names the
 # keys it shares, and a key syncs between two panels that both name it.
-SYNC = {"run": ("run",), "x": ("x", "x_fn"), "y": ("y", "y_fn"), "colour": ("colour",),
+SYNC = {"run": ("run",), "x": ("x",), "x_fn": ("x_fn",), "y": ("y",), "y_fn": ("y_fn",),
+        "colour": ("colour",),
         "smoothing": ("smooth", "window", "in_x", "span", "order"),
         "background": ("background", "degree", "fit_from", "fit_to"),
         "style": ("style", "width", "marker", "marker_size")}
-SYNC_DEFAULT = "run x y colour"
+SYNC_DEFAULT = "run x x_fn y y_fn colour style"
 X_UNITS = ("span", "fit_from", "fit_to")  # settings in the plotted x
 
 AUTO_MARKER_SIZE = 3.0  # matplotlib's markersize, in points

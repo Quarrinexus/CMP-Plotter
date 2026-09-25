@@ -175,9 +175,10 @@ stay until it's done or cancelled.
   panel takes the other's number of lines, asking first if some of its own
   would go). From then on adding or removing a line in one does the same in
   all of them, and changing a synced setting does too. **Sync** chooses, per
-  panel, what it shares: **Dataset**, **X axis** and **Y axis** (each with
-  its Function box) and **Colour** are ticked to start with; **Smoothing**,
-  **Background** and **Line style** (line, width, marker and its size) aren't. A
+  panel, what it shares: **Dataset**, **X axis**, **X function**, **Y
+  axis**, **Y function**, **Colour** and **Line style** (line, width, marker
+  and its size) are ticked to start with; **Smoothing** and **Background**
+  aren't. A
   setting syncs between two panels only if both tick it, so e.g. one panel
   shows the raw data, a linked one the same data with the background
   subtracted, and another that smoothed; or untick Y axis to plot another

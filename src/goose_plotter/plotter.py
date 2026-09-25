@@ -705,15 +705,16 @@ class Plotter(tk.Tk):
         freeze_hint = ttk.Label(body, foreground=theme.HINT)
         freeze_hint.pack(anchor=tk.W)
         # What this panel shares with the group, in two columns: the data
-        # input on the left, how it's processed and drawn on the right.
+        # input on the left, how it's processed and looks on the right.
         ttk.Label(body, text="Sync").pack(anchor=tk.W, pady=(12, 2))
         boxes = ttk.Frame(body)
         boxes.pack(anchor=tk.W, fill=tk.X)
         self.sync_vars = {}
-        names = {"run": "Dataset", "x": "X axis", "y": "Y axis", "colour": "Colour",
-                 "smoothing": "Smoothing", "background": "Background", "style": "Line style"}
-        places = {"run": (0, 0), "x": (1, 0), "y": (2, 0), "colour": (3, 0),
-                  "smoothing": (0, 1), "background": (1, 1), "style": (2, 1)}
+        names = {"run": "Dataset", "x": "X axis", "x_fn": "X function", "y": "Y axis",
+                 "y_fn": "Y function", "colour": "Colour", "smoothing": "Smoothing",
+                 "background": "Background", "style": "Line style"}
+        places = {"run": (0, 0), "x": (1, 0), "x_fn": (2, 0), "y": (3, 0), "y_fn": (4, 0),
+                  "smoothing": (0, 1), "background": (1, 1), "colour": (2, 1), "style": (3, 1)}
         for key in SYNC:
             var = self.sync_vars[key] = tk.BooleanVar()
             row, col = places[key]
@@ -1557,7 +1558,7 @@ class Plotter(tk.Tk):
                         if attr in X_UNITS and (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
                             continue
                         setattr(mine, attr, getattr(theirs, attr))
-                    if key == "x" and (mine.x, mine.x_fn) != old_x:
+                    if key in ("x", "x_fn") and (mine.x, mine.x_fn) != old_x:
                         # In the old x; x comes before the keys that could set them.
                         mine.span = mine.fit_from = mine.fit_to = None
                         self._clear_ranges(lines, "x")
