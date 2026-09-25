@@ -32,7 +32,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `model.py` | `Line` and `Panel`, colours, legend text, shared axis labels |
 | `smoothing.py` | moving average, median, Savitzky–Golay; windows in points or x |
 | `background.py` | polynomial fit in x, shown or subtracted |
-| `splicing.py` | cutting a line to an x range, or a range out of it |
+| `splicing.py` | cutting a line to x ranges, or those ranges out of it |
 | `spectrum.py` | FFT of a line against its plotted x, for FFT panels; `even_grid`, the binning it shares |
 | `derivative.py` | first and second derivatives on `even_grid`, for derivative panels |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
@@ -46,8 +46,9 @@ mirror. If that folder isn't around this repo, use whatever data folder
 `Plotter._draw_panel`, per `Line`, via `_line_data`:
 
 1. read the columns, apply the axis functions (`_axis`)
-2. the cut (`splicing.cut`): a kept range drops the rows outside it, a
-   removed one turns the rows inside to NaN in x and y, so it's drawn as a
+2. the cut (`splicing.cut`): `Line.cuts` is a tuple of (start, end)
+   ranges, and `Line.cut` one mode for them all. Kept, the rows in none of
+   them are dropped; removed, the rows in any turn to NaN in x and y, so it's drawn as a
    gap and fits and x-unit windows leave it out (SG in points still
    interpolates across it, as across any NaN)
 3. background (`background.apply`): fit on the unsmoothed data
@@ -76,8 +77,9 @@ Keep that order. Things that depend on it:
   `marker_size` of None `AUTO_MARKER_SIZE`; `apply_controls` only stores the
   box's number if it differs from the auto one it showed.
 - **Settings in x units** (`model.X_UNITS`: `Line.span`, `fit_from`,
-  `fit_to`, `cut_from`, `cut_to`) are in the *plotted* x, after its function. They're cleared whenever x or its function
-  changes, or on ⇅, since a value in T means nothing in 1/B.
+  `fit_to`, `cuts`) are in the *plotted* x, after its function. They're
+  cleared (`Line.clear_x_units`) whenever x or its function changes, or on
+  ⇅, since a value in T means nothing in 1/B.
 - Errors are stored in `Line.error` as `"<Stage> error: message"`.
   `_show_error` shows the selected line's under the axes boxes; it runs from
   `_load_controls`, which every redraw path ends in, so there's no popup.
@@ -171,7 +173,9 @@ panel had no lines of its own and every panel an "fft" operation. `load` drops u
 aren't keys, and raises ValueError for anything that isn't a session, before
 anything changes. A new `Line` or `Panel` field is saved automatically unless
 it's in `session.SKIP`; one whose value must be a menu key goes in
-`session.CHOICES` too.
+`session.CHOICES` too, and one holding a list (JSON gives lists, undo
+tuples) in `session.TIDY`, with what checks it. `Line.cuts` is one; a
+format 5 line's single `cut_from` / `cut_to` becomes a one-range `cuts`.
 
 ## Undo
 

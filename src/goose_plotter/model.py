@@ -16,12 +16,12 @@ from goose_plotter.smoothing import describe as describe_smoothing
 # What a link between two panels can share, line by line: a Link's `sync`
 # names the keys it shares.
 SYNC = {"run": ("run",), "x": ("x",), "x_fn": ("x_fn",), "y": ("y",), "y_fn": ("y_fn",),
-        "colour": ("colour",), "cut": ("cut", "cut_from", "cut_to"),
+        "colour": ("colour",), "cut": ("cut", "cuts"),
         "smoothing": ("smooth", "window", "in_x", "span", "order"),
         "background": ("background", "degree", "fit_from", "fit_to"),
         "style": ("style", "width", "marker", "marker_size")}
 SYNC_DEFAULT = "run x x_fn y y_fn colour style"
-X_UNITS = ("span", "fit_from", "fit_to", "cut_from", "cut_to")  # settings in the plotted x
+X_UNITS = ("span", "fit_from", "fit_to", "cuts")  # settings in the plotted x
 
 AUTO_MARKER_SIZE = 3.0  # matplotlib's markersize, in points
 
@@ -49,9 +49,8 @@ class Line:
     fit_from: float | None = None  # the fit's x range; None: no limit
     fit_to: float | None = None
     order: int = 2  # Savitzky–Golay polynomial order
-    cut: str = ""  # a key of splicing.MODES; "" for off
-    cut_from: float | None = None  # the cut's x range; None: no limit
-    cut_to: float | None = None
+    cut: str = ""  # a key of splicing.MODES, for all the ranges; "" for off
+    cuts: tuple = ()  # the cut's x ranges, (start, end) pairs as splicing.tidy makes them
     colour: str | None = None  # None: picked automatically, see line_colours
     # How it's drawn; not in `shown`, so changing them keeps the zoom.
     style: str = "auto"  # a key of STYLES
@@ -97,10 +96,15 @@ class Line:
 
     @property
     def cutting(self):
-        """(mode, cut_from, cut_to), or None when the line isn't cut."""
-        if not self.cut or (self.cut_from is None and self.cut_to is None):
+        """(mode, ranges), or None when the line isn't cut."""
+        if not self.cut or not self.cuts:
             return None
-        return (self.cut, self.cut_from, self.cut_to)
+        return (self.cut, self.cuts)
+
+    def clear_x_units(self):
+        """Forget the settings in the plotted x (X_UNITS), when x or its function changes."""
+        self.span = self.fit_from = self.fit_to = None
+        self.cuts = ()
 
     def parts(self):
         """(run, y part, x part, smoothing, fitting, cutting) as they'd appear in a filename."""

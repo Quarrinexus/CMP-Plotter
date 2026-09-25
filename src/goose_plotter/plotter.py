@@ -603,10 +603,13 @@ class Plotter(tk.Tk):
         self.fit_mode.show = body.refresh
 
     def _splicing_box(self, parent):
-        """Cut the selected line to an x range, or cut a range out of it. No
-        toggle, as it has the Splicing tab to itself."""
+        """Cut the selected line to some x ranges, or cut them out of it: one
+        mode for all its ranges, then the ranges, typed or picked. No toggle,
+        as it has the Splicing tab to itself."""
         self.cut_mode = tk.StringVar(value=splicing.MODES[""])
         self.cut_from, self.cut_to = tk.StringVar(), tk.StringVar()
+        self.cut_index = None  # the range chosen in the list, which Enter changes
+        self.cut_owner = None  # the line the list was last filled from
         body = ttk.Frame(parent)
         body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
         mode = ttk.Combobox(body, textvariable=self.cut_mode, state="readonly", width=14,
@@ -621,14 +624,107 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="to").pack(side=tk.LEFT)
         end = ttk.Entry(row, textvariable=self.cut_to, width=7)
         end.pack(side=tk.LEFT, padx=(4, 6))
+        ttk.Button(row, text="Add", width=5, command=self.add_cut).pack(side=tk.LEFT)
         ttk.Button(row, text="Pick", width=5,
-                   command=lambda: self.pick_range("cut")).pack(side=tk.LEFT)
+                   command=lambda: self.pick_range("cut")).pack(side=tk.LEFT, padx=(4, 0))
         for box in (start, end):
             for key in ("<Return>", "<KP_Enter>"):
-                box.bind(key, lambda _: self.apply_controls())
+                box.bind(key, lambda _: self.add_cut(replace=True))
+        # The ranges, with Delete beside them. Width 1: the list takes the
+        # room the column leaves it, never widening it.
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, fill=tk.X, pady=(6, 0))
+        ttk.Button(row, text="Delete", width=6, command=self.delete_cut).pack(
+            side=tk.RIGHT, anchor=tk.N, padx=(6, 0))
+        # Plain text, so the chosen row in the theme's colours (the Lines list
+        # picks each row's own foreground instead).
+        self.cut_list = tk.Listbox(row, height=4, width=1, exportselection=False,
+                                   activestyle="none", foreground=theme.TEXT,
+                                   selectbackground=theme.ACCENT_SOFT,
+                                   selectforeground=theme.TEXT)
+        scroll = ttk.Scrollbar(row, orient=tk.VERTICAL, command=self.cut_list.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.cut_list.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.cut_list["yscrollcommand"] = scroll.set
+        self.cut_list.bind("<<ListboxSelect>>", lambda _: self._choose_cut())
         for text in ("in the plotted x; a blank end: no limit",
-                     "before fits, smoothing, FFT; Off to widen"):
+                     "click a range, then Enter changes it",
+                     "before fits, smoothing, FFT; Off to see all"):
             ttk.Label(body, text=text, foreground=theme.HINT).pack(anchor=tk.W)
+
+    def _show_cuts(self):
+        """Fill the Splicing list with the selected line's ranges, and the boxes
+        with the chosen one."""
+        l = self.panel.line
+        if l is not self.cut_owner:  # another line: start at its first range
+            self.cut_owner, self.cut_index = l, 0 if l.cuts else None
+            self.cut_from.set("")
+            self.cut_to.set("")
+        if self.cut_index is not None and not 0 <= self.cut_index < len(l.cuts):
+            self.cut_index = len(l.cuts) - 1 if l.cuts else None
+        self.cut_list.delete(0, tk.END)
+        for start, end in l.cuts:
+            self.cut_list.insert(tk.END, "x " + ("from " + f"{start:.6g}" if end is None
+                                                 else "up to " + f"{end:.6g}" if start is None
+                                                 else f"{start:.6g} to {end:.6g}"))
+        if self.cut_index is not None:
+            self.cut_list.selection_set(self.cut_index)
+            self.cut_list.see(self.cut_index)
+            start, end = l.cuts[self.cut_index]
+            self.cut_from.set("" if start is None else f"{start:.12g}")
+            self.cut_to.set("" if end is None else f"{end:.12g}")
+
+    def _choose_cut(self):
+        chosen = self.cut_list.curselection()
+        if chosen:
+            self.cut_index = chosen[0]
+            self._show_cuts()
+
+    def _typed_cut(self):
+        """The range typed in the Splicing boxes, or None, saying why, if it isn't one."""
+        ends = []
+        for var in (self.cut_from, self.cut_to):
+            text = var.get().strip()
+            try:
+                value = float(text) if text else None
+            except ValueError:
+                value = np.nan
+            if value is not None and not np.isfinite(value):
+                self._say(f"'{text}' isn't a number.", error=True)
+                return None
+            ends.append(value)
+        if ends == [None, None]:
+            self._say("Type at least one end of the range.", error=True)
+            return None
+        return tuple(ends)
+
+    def add_cut(self, pair=None, replace=False):
+        """Add a range to the selected line's cut: `pair`, else the typed one.
+        `replace`: in place of the range chosen in the list (Enter), if there is one."""
+        pair = pair or self._typed_cut()
+        if pair is None:
+            return
+        l = self.panel.line
+        cuts = list(l.cuts)
+        if replace and self.cut_index is not None:
+            del cuts[self.cut_index]
+        l.cuts = splicing.tidy(cuts + [pair])
+        self.cut_index = l.cuts.index(splicing.tidy([pair])[0])
+        switched = not l.cut
+        if switched:  # adding a range means cutting with it
+            self.cut_mode.set(splicing.MODES["keep"])
+        self.apply_controls()
+        if switched:  # after the redraw, which clears the status
+            self._say("Keeping the range; choose Remove ranges to cut it out instead.")
+
+    def delete_cut(self):
+        """Delete the range chosen in the list from the selected line's cut."""
+        l = self.panel.line
+        if self.cut_index is None:
+            self._say("Click a range in the list to delete it.", error=True)
+            return
+        l.cuts = l.cuts[:self.cut_index] + l.cuts[self.cut_index + 1:]
+        self.apply_controls()
 
     def _fft_box(self, parent):
         """A collapsed 'FFT' toggle: make an FFT panel of this one, or set one up."""
@@ -986,8 +1082,7 @@ class Plotter(tk.Tk):
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
         self.cut_mode.set(splicing.MODES[l.cut])
-        self.cut_from.set("" if l.cut_from is None else f"{l.cut_from:.12g}")
-        self.cut_to.set("" if l.cut_to is None else f"{l.cut_to:.12g}")
+        self._show_cuts()
         self._show_axes()
         self.fft_window.show()
         self.derivative_order.show()
@@ -1042,16 +1137,14 @@ class Plotter(tk.Tk):
         except ValueError:
             pass
         l.cut = next(k for k, v in splicing.MODES.items() if v == self.cut_mode.get())
-        for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to),
-                          ("cut_from", self.cut_from), ("cut_to", self.cut_to)):
+        for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to)):
             try:
                 setattr(l, attr, float(var.get()) if var.get().strip() else None)
             except ValueError:
                 pass
         if (l.x, l.x_fn) != old_x:
             # A window or range in the old x means nothing in the new one.
-            for attr in X_UNITS:
-                setattr(l, attr, None)
+            l.clear_x_units()
             self._clear_ranges(self.panel.lines, "x")
         if (l.y, l.y_fn, l.background == "subtract") != old_y:
             self._clear_ranges(self.panel.lines, "y")
@@ -1452,8 +1545,7 @@ class Plotter(tk.Tk):
         for l in p.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
-            for attr in X_UNITS:  # in the old x; meaningless now
-                setattr(l, attr, None)
+            l.clear_x_units()  # in the old x; meaningless now
         self._sync_inputs(self.selected)
         self._redraw_selected(others="")
 
@@ -1729,8 +1821,7 @@ class Plotter(tk.Tk):
                     setattr(mine, attr, getattr(theirs, attr))
                 if key in ("x", "x_fn") and (mine.x, mine.x_fn) != old_x:
                     # In the old x; x comes before the keys that could set them.
-                    for attr in X_UNITS:
-                        setattr(mine, attr, None)
+                    mine.clear_x_units()
                     self._clear_ranges(lines, "x")
             new_y = (mine.y, mine.y_fn, mine.background)
             if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
@@ -1883,12 +1974,8 @@ class Plotter(tk.Tk):
         if start == end:  # a click, not a drag
             return
         # 5 significant figures: plenty for a range, and tidy in the boxes.
-        if self.pick_target == "cut":
-            self.cut_from.set(f"{start:.5g}")
-            self.cut_to.set(f"{end:.5g}")
-            if not self.panel.line.cut:  # picking a range means cutting to it
-                self.cut_mode.set(splicing.MODES["keep"])
-            self.apply_controls()
+        if self.pick_target == "cut":  # a new range, beside any there are
+            self.add_cut((float(f"{start:.5g}"), float(f"{end:.5g}")))
             return
         self.fit_from.set(f"{start:.5g}")
         self.fit_to.set(f"{end:.5g}")

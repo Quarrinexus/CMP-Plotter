@@ -87,8 +87,8 @@ keeps them.
 At the top of the controls column, **Files** opens to the folders, Data
 format and sessions (it starts closed once both folders are chosen). Under
 it Dataset, the Lines list and the axes are always shown, and the rest is in
-four tabs: **Process** (Smoothing, Background), **Splicing** (cutting a line
-to part of its x), **Operations** (FFT, Derivative) and **Linking** (Linked
+four tabs: **Process** (Smoothing, Background), **Splicing** (cutting lines
+to parts of their x), **Operations** (FFT, Derivative) and **Linking** (Linked
 data); their sections start open. If
 the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
@@ -124,17 +124,20 @@ stay until it's done or cancelled.
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick** sets the range by dragging across the plot.
   The fit comes before smoothing.
-- **Splicing**: per line, in its own tab. **Keep range** cuts the line to x
-  from ... to ... (e.g. the part of a sweep with the oscillations);
-  **Remove range** cuts that part out (a glitch, a parked stretch), leaving
-  a gap. Like the fit range it's in the plotted x, after its function, a
-  blank end means no limit, and **Pick** sets it by dragging across the
-  plot (choosing Keep range if the cut was off). The cut comes first, so
-  it's what's drawn and all the background fit, smoothing, FFT and
-  derivative ever see: an FFT of a kept range has its resolution, 1 / (the
-  range's width). With Keep range on only that range is drawn, so to widen
-  it type the new ends or turn it Off first. To only zoom in, without
-  cutting anything, type a range in the axes editor instead.
+- **Splicing**: per line, in its own tab. Give a line any number of x
+  ranges: type x ... to ... and **Add**, or **Pick** one by dragging across
+  the plot. One setting covers all of them: **Keep ranges** cuts the line
+  to what's in any of them (e.g. the parts of a sweep with the
+  oscillations), **Remove ranges** cuts them all out (glitches, parked
+  stretches), leaving gaps. Adding a range while it's Off turns on Keep
+  ranges. Click a range in the list to see it in the boxes, where Enter
+  changes it; **Delete** removes it. Like the fit range they're in the
+  plotted x, after its function, and a blank end means no limit. The cut
+  comes first, so it's what's drawn and all the background fit, smoothing,
+  FFT and derivative ever see: an FFT of one kept range has its
+  resolution, 1 / (the range's width). With Keep ranges on only those are
+  drawn, so to pick outside them, turn it Off first. To only zoom in,
+  without cutting anything, type a range in the axes editor instead.
 - **Line editor**: the box under + and -, which shows the selected line's
   look, opens it. **Colour** (drag in the field and the brightness strip;
   **Automatic** goes back to the sample's colour or a free one), **Line**

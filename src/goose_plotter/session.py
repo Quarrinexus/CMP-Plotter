@@ -12,14 +12,15 @@ from goose_plotter.widgets import MAX_GRID
 # 3: a title, axis label or legend name of None is the automatic one, "" none.
 # 4: links are between pairs of panels, each with its own ticks and freeze.
 # 5: lines can be cut (Splicing), and links can share the cut.
-VERSION = 5
+# 6: a line's cut is a list of ranges, all kept or all removed.
+VERSION = 6
 KEY = "goose_plotter_session"  # the session file's marker, holding VERSION
 # `dump`'s own marker, so `load` reads undo snapshots and files alike; its
 # absence means the layout of version 1, where a derived panel shared its
 # data panel's lines and every panel carried an operation. Before 3, "" was
 # the automatic text; before 4, links were groups, each panel with its ticks;
-# before 5, there was no cut to share.
-FORMAT = 5
+# before 5, there was no cut to share; in 5, a line had one cut range.
+FORMAT = 6
 TEXTS = {Panel: ("title", "x_label", "y_label"), Line: ("label",)}
 
 # Not saved: what the last draw found, and which line the controls edit.
@@ -32,6 +33,9 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                    "grid_style": GRID_STYLES, "operation": OPERATIONS, "window": spectrum.WINDOWS,
                    "pad": spectrum.PADDING},
            Link: {}}
+
+# Fields holding a list, and what makes the saved one fit, per class as for CHOICES.
+TIDY = {Line: {"cuts": splicing.tidy}, Panel: {}, Link: {}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.
@@ -89,7 +93,12 @@ def _build(cls, data, **extra):
         raise ValueError(f"expected an object for a {cls.__name__.lower()}")
     kwargs = {}
     for f in fields(cls):
-        if f.name in SKIP or f.name not in data or not _allowed(f, data[f.name]):
+        if f.name in SKIP or f.name not in data:
+            continue
+        if f.name in TIDY[cls]:  # JSON's lists, checked item by item
+            kwargs[f.name] = TIDY[cls][f.name](data[f.name])
+            continue
+        if not _allowed(f, data[f.name]):
             continue
         value = data[f.name]
         if f.name in CHOICES[cls] and value not in CHOICES[cls][f.name]:
@@ -98,6 +107,14 @@ def _build(cls, data, **extra):
             continue
         kwargs[f.name] = value
     return cls(**kwargs, **extra)
+
+
+def _line(data):
+    """A Line from `dump`'s data; before format 6 its cut was one range,
+    `cut_from` to `cut_to`."""
+    if isinstance(data, dict) and "cuts" not in data:
+        data = {**data, "cuts": [[data.get("cut_from"), data.get("cut_to")]]}
+    return _build(Line, data)
 
 
 def load(state):
@@ -112,7 +129,7 @@ def load(state):
         raise ValueError(f"a {rows} x {cols} layout is bigger than the plotter allows")
     grid = [(r, c) for r in range(rows) for c in range(cols)]
     fmt = state.get("format")
-    if fmt not in (2, 3, 4, FORMAT):
+    if fmt not in (2, 3, 4, 5, FORMAT):
         panels, groups = _load_old(saved, grid)
         return rows, cols, _blank_is_auto(panels), _group_links(panels, groups)
     panels = {}
@@ -121,14 +138,14 @@ def load(state):
         if data is None:
             panels[cell] = Panel()
             continue
-        lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
+        lines = [_line(l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines, source=_source(data, grid))
     seen = set()
     for p in panels.values():  # ids must tell panels apart; a file edited by hand may not
         if p.id in seen:
             p.id = Panel().id
         seen.add(p.id)
-    if fmt == FORMAT:
+    if fmt in (5, FORMAT):
         return rows, cols, panels, _links(state.get("links"), panels)
     if fmt == 4:
         return rows, cols, panels, _share_cut(_links(state.get("links"), panels), panels)
@@ -221,7 +238,7 @@ def _load_old(saved, grid):
         data = saved.get(cell)
         if data is None or (isinstance(data, dict) and "source" in data):
             continue
-        lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
+        lines = [_line(l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines)
         panels[cell].operation = ""
         groups[cell] = _group_of(data, old_ticks=True)
