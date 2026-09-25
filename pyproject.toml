@@ -1,6 +1,6 @@
 [project]
 name = "goose-plotter"
-version = "0.3.0"
+version = "0.3.1"
 description = "GOOSE, the Graphical Oscillation Observation Software Environment: a vibe coded tool for creating Condensed Matter Physics plots"
 readme = "README.md"
 license = "MIT"
