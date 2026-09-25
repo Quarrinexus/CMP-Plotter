@@ -55,9 +55,31 @@ On any system, instead of `uv run` from the project folder:
 uv tool install .
 ```
 
-After pulling changes, update it with `uv tool install --reinstall .`;
 `uv tool uninstall cmp-plotter` removes it. If the `cmp-plotter` command
 isn't found afterwards, run `uv tool update-shell` and open a new terminal.
+
+## Update
+
+From the project folder, get the latest code:
+
+```bash
+git pull
+```
+
+If you downloaded the ZIP instead, download it again and extract it over the
+old folder (or somewhere new).
+
+With `uv run cmp-plotter` there's nothing more to do: the next run picks up
+the new code, and any new dependencies, by itself. If you installed the
+command with `uv tool install .`, reinstall it from the project folder:
+
+```bash
+uv tool install --reinstall .
+```
+
+Your settings (`~/.config/cmp-plotter/settings.json`) and each data folder's
+`cmp-plotter.json` profile live outside the project folder, so updating
+keeps them.
 
 ## Use
 
