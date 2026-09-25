@@ -360,7 +360,7 @@ class Plotter(tk.Tk):
         body = self._collapsible(parent, (4, 0), text, on_open=lambda: entry.focus_set())
         entry = ttk.Entry(body, textvariable=var, width=16)
         entry.pack(anchor=tk.W)
-        ttk.Label(body, text=f"e.g. 1/{name}, exp({name}) - Enter to apply",
+        ttk.Label(body, text=f"e.g. 1/{name}; Enter applies",
                   foreground=theme.HINT).pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             entry.bind(key, lambda _: (self.apply_controls(), body.refresh()))
@@ -437,8 +437,7 @@ class Plotter(tk.Tk):
                 orders.pack(anchor=tk.W, pady=(4, 0), after=sizes)
             else:
                 orders.pack_forget()
-            hint["text"] = ("of the plotted x, e.g. in 1/B with a 1/x function"
-                            if self.panel.line.in_x else "points, in the order they were taken")
+            hint["text"] = "in plotted x" if self.panel.line.in_x else "in data points"
         self.smooth.show = refresh
 
     def _background_box(self, parent):
@@ -528,8 +527,8 @@ class Plotter(tk.Tk):
                               values=list(LEGENDS.values()))
         legend.pack(side=tk.LEFT, padx=(4, 0))
         legend.bind("<<ComboboxSelected>>", lambda _: self.apply_axes())
-        ttk.Label(body, text="blank: automatic; $...$ for maths, e.g. $B$ (T)",
-                  foreground=theme.HINT, wraplength=230).pack(anchor=tk.W)
+        ttk.Label(body, text="blank: automatic; $B$ for maths",
+                  foreground=theme.HINT).pack(anchor=tk.W)
         for box in boxes:
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_axes())
@@ -560,8 +559,7 @@ class Plotter(tk.Tk):
             anchor=tk.W, pady=(2, 0))
         ttk.Button(make, text="FFT to existing panel...", command=self.fft_existing_panel).pack(
             anchor=tk.W, pady=(4, 0))
-        ttk.Label(make, text="of this panel's lines, locked to it; use 1/x on the "
-                             "field for F in T", foreground=theme.HINT, wraplength=230).pack(
+        ttk.Label(make, text="use 1/x on B for F in T", foreground=theme.HINT).pack(
             anchor=tk.W)
         # For an FFT panel: its settings.
         settings = ttk.Frame(body)
@@ -621,10 +619,8 @@ class Plotter(tk.Tk):
         ttk.Button(row, text="Link to panel...", command=self.link_panels).pack(side=tk.LEFT)
         unlink = ttk.Button(row, text="Unlink panel", command=self.unlink_panel)
         unlink.pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Label(body, text="linked panels plot the same data (dataset, X, Y and "
-                             "functions) in the same colours, line by line; smoothing, "
-                             "background and ranges are each panel's own",
-                  foreground=theme.HINT, wraplength=230).pack(anchor=tk.W)
+        ttk.Label(body, text="shares data and colours only",
+                  foreground=theme.HINT).pack(anchor=tk.W)
 
         def refresh():
             body.refresh()

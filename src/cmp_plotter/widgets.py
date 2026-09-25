@@ -252,8 +252,6 @@ class LineStylePopup(tk.Toplevel):
         self.hex = ttk.Label(side, font="TkFixedFont")
         self.hex.pack(anchor=tk.W, pady=(4, 0))
         ttk.Button(side, text="Automatic", command=on_reset).pack(anchor=tk.W, pady=(8, 0))
-        ttk.Label(side, text="the sample's, or\na free one", foreground=theme.HINT).pack(
-            anchor=tk.W)
 
         ttk.Label(body, text="Line", foreground=theme.MUTED).pack(anchor=tk.W)
         row = ttk.Frame(body)
@@ -292,7 +290,7 @@ class LineStylePopup(tk.Toplevel):
         ttk.Label(body, text="Name in the legend", foreground=theme.MUTED).pack(anchor=tk.W)
         entry = ttk.Entry(body, textvariable=self.name, width=40)
         entry.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(body, text="Enter applies; blank: automatic; $...$ for maths",
+        ttk.Label(body, text="Enter applies; blank: automatic",
                   foreground=theme.HINT).pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             entry.bind(key, lambda _: self._changed(label=self.name.get().strip()))
