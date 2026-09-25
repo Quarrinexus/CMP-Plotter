@@ -212,6 +212,7 @@ class Plotter(tk.Tk):
         # Narrower than Dataset, to leave room for the two buttons beside them.
         self.x = self._combo(axis_boxes, "X axis", [], width=21)
         self.x_fn = self._function_box(axis_boxes, "x")
+        y_label = len(axis_boxes.pack_slaves())  # the Y axis label's place in the column
         self.y = self._combo(axis_boxes, "Y axis", [], width=21)
         self.y_fn = self._function_box(axis_boxes, "y")
         # Beside the axis boxes: swap x and y, then the axes editor.
@@ -222,6 +223,19 @@ class Plotter(tk.Tk):
             side=tk.LEFT)
         ttk.Button(axis_buttons, image=self.axes_icon, command=self.open_axes).pack(
             side=tk.LEFT, padx=(4, 0))
+        # Where they sit centred beside the boxes with both Function toggles
+        # closed, kept at that height above the Y axis label: opening X's
+        # Function moves them down with it, opening Y's doesn't.
+        self.update_idletasks()
+        y_label = axis_boxes.pack_slaves()[y_label]
+        above_y = y_label.winfo_y() - max(
+            0, (axis_boxes.winfo_reqheight() - axis_buttons.winfo_reqheight()) // 2)
+        axis_buttons.pack_configure(anchor=tk.N)
+
+        def place_buttons(_=None):
+            axis_buttons.pack_configure(pady=(max(0, y_label.winfo_y() - above_y), 0))
+        place_buttons()
+        axis_boxes.bind("<Configure>", place_buttons, add="+")
         # Why the selected line isn't drawn; shown only when it isn't.
         self.error_label = ttk.Label(controls, foreground=theme.ERROR, wraplength=300)
         self.axes_block = axes
