@@ -84,10 +84,12 @@ keeps them.
 
 ## Use
 
-The Lines list, Dataset and axes are always at the top of the controls
-column. The rest is in four tabs under them: **Process** (Smoothing,
-Background), **Operations** (FFT, Derivative), **Linking** (Linked data) and
-**Files** (folders, Data format, sessions); their sections start open. If the selected line can't be drawn (a bad function, a
+At the top of the controls column, **Files** opens to the folders, Data
+format and sessions (it starts closed once both folders are chosen). Under
+it Dataset, the Lines list and the axes are always shown, and the rest is in
+three tabs: **Process** (Smoothing, Background), **Operations** (FFT,
+Derivative) and **Linking** (Linked data); their sections start open. If
+the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
 Other messages show above the buttons at the bottom of the column: green
@@ -95,9 +97,9 @@ ones (Saved ..., Undone) clear after 10 seconds, red ones stay until the
 next message, and instructions for a pick under way (Click the panel ...)
 stay until it's done or cancelled.
 
-- **Data / Output folder** (Files tab): choose with Browse...; both are
+- **Data / Output folder** (under Files): choose with Browse...; both are
   remembered in `~/.config/goose-plotter/settings.json` (see Windows above).
-- **Data format...** (Files tab): set the delimiter, column-name line and
+- **Data format...** (under Files): set the delimiter, column-name line and
   first data line by hand, with a preview. Opens by itself when a file's layout
   can't be detected. Saved for the whole data folder in its profile.
 - **Dataset, X axis, Y axis**: any column against any other, sample columns
@@ -224,7 +226,7 @@ stay until it's done or cancelled.
   pixels shown beside it (PDF and SVG stay sharp at any DPI). **Transparent**
   leaves out the white background. They're kept in `settings.json`, for
   every figure until changed.
-- **Open session... / Save session...** (Files tab): a session
+- **Open session... / Save session...** (under Files): a session
   is a `.json` file holding the layout and every panel and line, with its
   settings, FFT and derivative panels, links, ranges, labels and styles, plus the data
   folder and a typed Save as name. Opening one switches to its data folder if

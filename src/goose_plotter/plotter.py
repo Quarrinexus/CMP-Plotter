@@ -144,7 +144,26 @@ class Plotter(tk.Tk):
         self.side.bind("<Configure>", self._fit_side)
         for sequence in ("<Button-4>", "<Button-5>", "<MouseWheel>"):
             self.bind_all(sequence, self._scroll_side, add="+")
-        ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(0, 2))
+        # Files: folders, format and sessions, set now and then, so a toggle at
+        # the top; open at start only if a folder still needs choosing.
+        files = self._collapsible(
+            controls, (0, 0), lambda _: "Files",
+            start_open=not (self.settings.get("data_dir") and self.settings.get("output_dir")))
+        self.data_label = self._folder_row(files, "Data folder", "data_dir")
+        self.output_label = self._folder_row(files, "Output folder", "output_dir")
+        ttk.Button(files, text="Data format...", command=self.edit_format).pack(
+            anchor=tk.W, pady=(0, 2))
+        ttk.Label(files, text="Session").pack(anchor=tk.W, pady=(10, 2))
+        buttons = ttk.Frame(files)
+        buttons.pack(anchor=tk.W, pady=(0, 2))
+        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
+            side=tk.LEFT)
+        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
+            side=tk.LEFT, padx=(6, 0))
+        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
+        self.run = self._combo(controls, "Dataset", [], postcommand=self._refresh_runs,
+                               pady=(0, 2))
+        ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(8, 2))
         lines = ttk.Frame(controls)
         lines.pack(anchor=tk.W, fill=tk.X)
         self.line_list = tk.Listbox(lines, height=4, width=24, exportselection=False,
@@ -172,7 +191,6 @@ class Plotter(tk.Tk):
             if i:
                 line_buttons.rowconfigure(2 * i - 1, minsize=4)  # the gap above it
 
-        self.run = self._combo(controls, "Dataset", [], postcommand=self._refresh_runs)
         axes = ttk.Frame(controls)
         axes.pack(anchor=tk.W, fill=tk.X)
         axis_boxes = ttk.Frame(axes)
@@ -201,7 +219,7 @@ class Plotter(tk.Tk):
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
         self.tabs = {}
-        for name in ("Process", "Operations", "Linking", "Files"):
+        for name in ("Process", "Operations", "Linking"):
             ttk.Radiobutton(strip, text=name, value=name, variable=self.tab,
                             style="Tab.Toolbutton", command=self._show_tab).pack(
                 side=tk.LEFT, padx=(0, 2))
@@ -212,22 +230,7 @@ class Plotter(tk.Tk):
         self._fft_box(self.tabs["Operations"])
         self._derivative_box(self.tabs["Operations"])
         self._link_box(self.tabs["Linking"])
-        files = self.tabs["Files"]
-        files.configure(padding=(0, 10, 0, 0))  # as the other tabs' toggles have
-        self.data_label = self._folder_row(files, "Data folder", "data_dir")
-        self.output_label = self._folder_row(files, "Output folder", "output_dir")
-        ttk.Button(files, text="Data format...", command=self.edit_format).pack(
-            anchor=tk.W, pady=(0, 2))
-        ttk.Label(files, text="Session").pack(anchor=tk.W, pady=(12, 2))
-        buttons = ttk.Frame(files)
-        buttons.pack(anchor=tk.W)
-        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
-            side=tk.LEFT)
-        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
-            side=tk.LEFT, padx=(6, 0))
-        # Files first only if a folder still needs choosing.
-        folders_set = self.settings.get("data_dir") and self.settings.get("output_dir")
-        self.tab.set("Process" if folders_set else "Files")
+        self.tab.set("Process")
         self._show_tab()
         self.bind("<Escape>", lambda _: self.stop_picking())
         self._bind_keys()
@@ -367,8 +370,8 @@ class Plotter(tk.Tk):
         up = event.num == 4 or getattr(event, "delta", 0) > 0
         self.side.yview_scroll(-1 if up else 1, "units")
 
-    def _combo(self, parent, label, values, default="", width=24, **kwargs):
-        ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(8, 2))
+    def _combo(self, parent, label, values, default="", width=24, pady=(8, 2), **kwargs):
+        ttk.Label(parent, text=label).pack(anchor=tk.W, pady=pady)
         var = tk.StringVar(value=default)
         box = ttk.Combobox(parent, textvariable=var, values=values,
                            state="readonly", width=width, **kwargs)
