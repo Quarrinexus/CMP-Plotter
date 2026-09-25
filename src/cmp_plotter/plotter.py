@@ -100,6 +100,10 @@ class Plotter(tk.Tk):
         self.fft_pick = None  # source cell while the user clicks a panel for its FFT
         self.link_pick = None  # cell while the user clicks a panel to link its data to
         self.cache = {}  # id(Line) -> (settings, its x, y and labels), see _line_data
+        # One step of undo: the state before the last change, and after it.
+        self.undo_state = self.last_state = None
+        self.merging = False  # the last change was a colour pick; see _changed
+        self.restoring = False
         self.settings = load_settings()
         self.profile, profile_error = load_profile(self.data_dir)
 
@@ -225,6 +229,8 @@ class Plotter(tk.Tk):
             self.bind(f"<Control-{key}>", lambda _: self.save())
         for key in ("d", "D"):
             self.bind(f"<Control-{key}>", lambda _: self.add_line())
+        for key in ("z", "Z"):
+            self.bind(f"<Control-{key}>", lambda _: self.undo())
         # Entries delete a character on Ctrl+D; here it copies the line instead.
         for cls in ("TEntry", "TSpinbox", "TCombobox"):
             for key in ("d", "D"):
@@ -917,6 +923,7 @@ class Plotter(tk.Tk):
         self._load_controls()  # loading a run can change the axis choices
         self._update_filename()
         self.canvas.draw()
+        self._changed()
 
     # --- lines ------------------------------------------------------------
 
@@ -997,6 +1004,7 @@ class Plotter(tk.Tk):
             self._draw_panel(cell)
         self._update_filename()
         self.canvas.draw()
+        self._changed()
 
     def _line_data(self, l):
         """(x, y, x labels, y labels) for a line: its columns through its function,
@@ -1541,6 +1549,8 @@ class Plotter(tk.Tk):
             self.colour_popup.lift()
         else:
             self.colour_popup = ColourPopup(self, self.pick_colour, self.reset_colour)
+            for key in ("z", "Z"):  # its own window, so the main one's binding misses it
+                self.colour_popup.bind(f"<Control-{key}>", lambda _: self.undo())
         self._show_colour()
 
     def pick_colour(self, colour):
@@ -1548,11 +1558,49 @@ class Plotter(tk.Tk):
         self._sync_inputs(self.selected)
         # The picker already shows it; moving it would round-trip through hex.
         self._show_colour(move_picker=False)
+        self._changed(merge=True)  # a drag through the picker is one step
 
     def reset_colour(self):
         self.panel.line.colour = None
         self._sync_inputs(self.selected)
         self._show_colour()
+        self._changed()
+
+    # --- undo -------------------------------------------------------------
+
+    def _changed(self, merge=False):
+        """Called after anything that may have changed the panels: if it did,
+        the state before becomes the one Ctrl+Z goes back to.
+
+        With `merge`, a change straight after another merging one (the colour
+        picker, which calls this on every drag step) extends that step."""
+        if self.restoring:
+            return
+        now = session.dump(self.panels, self.rows, self.cols)
+        if self.last_state is None:  # the window's first draw
+            self.last_state = now
+            return
+        if now == self.last_state:
+            return
+        if not (merge and self.merging):
+            self.undo_state = self.last_state
+        self.last_state, self.merging = now, merge
+
+    def undo(self):
+        """Go back one step: the panels as they were before the last change."""
+        self.stop_picking()
+        self._changed()  # a colour still being picked counts as that change
+        if self.undo_state is None:
+            self._say("Nothing to undo.", error=True)
+            return
+        state, self.undo_state = self.undo_state, None
+        self.restoring = True
+        try:
+            self._restore(state)
+        finally:
+            self.restoring = False
+        self.last_state, self.merging = session.dump(self.panels, self.rows, self.cols), False
+        self._say("Undone. (One step only.)")
 
     # --- sessions ---------------------------------------------------------
 

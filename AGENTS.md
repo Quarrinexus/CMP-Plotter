@@ -132,6 +132,17 @@ anything changes. A new `Line` or `Panel` field is saved automatically unless
 it's in `session.SKIP`; one whose value must be a menu key goes in
 `session.CHOICES` too.
 
+## Undo
+
+One step, built on the session snapshot: `_changed()` runs after every redraw
+(`_build_axes`, `_redraw_selected`) and colour change, and when the panels'
+`session.dump` differs from the last one, that last one becomes
+`undo_state`. So a new action needs no undo code of its own as long as it
+ends in one of those redraws. The colour picker calls it with `merge=True`,
+making a drag one step. `undo` restores with `restoring` set, so the restore
+isn't recorded as a change. Selection isn't in the snapshot, so selecting
+isn't a step. Opening a session is undoable, but not its data-folder switch.
+
 ## Things that look odd but are deliberate
 
 - **Row order, not sorted x.** The field record jitters (hundreds of direction

@@ -172,6 +172,7 @@ keeps them.
 | Key | Does |
 |---|---|
 | Ctrl+S | Save figure (Enter in Save as does too) |
+| Ctrl+Z | undo the last change (one step, for now) |
 | Ctrl+D | copy the selected line (+) |
 | Delete | remove the selected line (-) |
 | Up / Down | select the previous / next line |
