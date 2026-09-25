@@ -191,7 +191,8 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
   `self.tabs` and hides the others, so the column fits the tab shown.
 - **The controls column is a scrolling canvas** (`self.side`) with the Save
   area pinned below it; the scrollbar shows only when the column is taller
-  than the window.
+  than the window, in a slot that keeps its width either way so the plot
+  doesn't shift.
 
 ## Testing by script
 

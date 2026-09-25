@@ -134,8 +134,14 @@ class Plotter(tk.Tk):
                               background=ttk.Style().lookup("TFrame", "background"))
         self.side.pack(side=tk.LEFT, fill=tk.Y)
         ttk.Style().configure("Side.Vertical.TScrollbar", arrowsize=10)
-        self.side_scroll = ttk.Scrollbar(side, orient=tk.VERTICAL, command=self.side.yview,
+        # The scrollbar's slot keeps its width whether it's showing or not, so
+        # the plot doesn't shift when the column starts or stops scrolling.
+        slot = ttk.Frame(side)
+        slot.pack(side=tk.LEFT, fill=tk.Y)
+        self.side_scroll = ttk.Scrollbar(slot, orient=tk.VERTICAL, command=self.side.yview,
                                          style="Side.Vertical.TScrollbar")
+        slot.configure(width=self.side_scroll.winfo_reqwidth())
+        slot.pack_propagate(False)
         self.side.configure(yscrollcommand=self.side_scroll.set)
         controls = ttk.Frame(self.side, padding=(10, 10, 10, 0))
         self.side.create_window(0, 0, window=controls, anchor=tk.NW)
@@ -222,10 +228,12 @@ class Plotter(tk.Tk):
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
         self.tabs = {}
-        for name in ("Process", "Operations", "Linking"):
-            ttk.Radiobutton(strip, text=name, value=name, variable=self.tab,
-                            style="Tab.Toolbutton", command=self._show_tab).pack(
-                side=tk.LEFT, padx=(0, 2))
+        # Equal shares of the column's width.
+        for i, name in enumerate(("Process", "Operations", "Linking")):
+            strip.columnconfigure(i, weight=1, uniform="tab")
+            ttk.Radiobutton(strip, text=name, value=name, variable=self.tab, width=1,
+                            style="Tab.Toolbutton", command=self._show_tab).grid(
+                row=0, column=i, sticky="ew", padx=(0 if i == 0 else 2, 0))
             self.tabs[name] = ttk.Frame(controls)
         # Smoothing's and FFT's toggles add the 10 px above them.
         self._smoothing_box(self.tabs["Process"])
