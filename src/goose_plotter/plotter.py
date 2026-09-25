@@ -161,8 +161,11 @@ class Plotter(tk.Tk):
         ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
             side=tk.LEFT, padx=(6, 0))
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
-        self.run = self._combo(controls, "Dataset", [], postcommand=self._refresh_runs,
-                               pady=(0, 2))
+        # Labels beside their boxes, not above, to keep the column short.
+        row = ttk.Frame(controls)
+        row.pack(fill=tk.X)
+        row.columnconfigure(1, weight=1)
+        self.run = self._row_combo(row, 0, "Dataset", postcommand=self._refresh_runs)
         ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(8, 2))
         lines = ttk.Frame(controls)
         lines.pack(anchor=tk.W, fill=tk.X)
@@ -238,15 +241,17 @@ class Plotter(tk.Tk):
         # The bottom of the column, below the scrolling part: the status, the
         # name to save under, then the buttons in a square (panels above,
         # saving below), so they stay at the very bottom. Each row spans the column.
-        self.status = ttk.Label(save, wraplength=230)
-        self.status.pack(anchor=tk.W, pady=(12, 0))
-        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(8, 2))
+        self.status = ttk.Label(save, wraplength=300)
+        self.status.pack(anchor=tk.W, pady=(6, 0))
+        row = ttk.Frame(save)
+        row.pack(fill=tk.X, pady=(4, 0))
+        ttk.Label(row, text="Save as").pack(side=tk.LEFT, padx=(0, 6))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
         # Width 1: the box takes the column's width without widening it (a long
         # name scrolls in it).
-        name_box = ttk.Entry(save, textvariable=self.filename, width=1)
-        name_box.pack(fill=tk.X, ipady=2)
+        name_box = ttk.Entry(row, textvariable=self.filename, width=1)
+        name_box.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=2)
         for key in ("<Return>", "<KP_Enter>"):
             name_box.bind(key, lambda _: self.save())
         buttons = ttk.Frame(save)
@@ -418,6 +423,19 @@ class Plotter(tk.Tk):
         body.refresh = refresh
         return body
 
+    def _row_combo(self, parent, row, label, **kwargs):
+        """'label [box]' on grid row `row` of `parent` (the box in column 1).
+
+        Width 1: the box takes the room the column leaves it, never widening it."""
+        ttk.Label(parent, text=label, width=7).grid(row=row, column=0, sticky=tk.W,
+                                                   pady=(0, 3))
+        var = tk.StringVar()
+        box = ttk.Combobox(parent, textvariable=var, state="readonly", width=1, **kwargs)
+        box.grid(row=row, column=1, sticky="ew", pady=(0, 3))
+        box.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        var.box = box
+        return var
+
     def _function_box(self, parent, name):
         """A collapsed 'Function' toggle that opens to an entry box."""
         var = tk.StringVar(value=name)
@@ -450,27 +468,29 @@ class Plotter(tk.Tk):
             return f"Smoothing{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
-        method = ttk.Combobox(body, textvariable=self.smooth, state="readonly", width=24,
+        # The method, and beside it for SG the order; then the window, and what
+        # it's counted in (the menu says).
+        top = ttk.Frame(body)
+        top.pack(anchor=tk.W, pady=(2, 0))
+        method = ttk.Combobox(top, textvariable=self.smooth, state="readonly", width=15,
                               values=list(smoothing.METHODS.values()))
-        method.pack(anchor=tk.W, pady=(2, 0))
+        method.pack(side=tk.LEFT)
         method.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
         sizes = ttk.Frame(body)
         sizes.pack(anchor=tk.W, pady=(4, 0))
         ttk.Label(sizes, text="Window").pack(side=tk.LEFT)
         window = ttk.Spinbox(sizes, textvariable=self.window, from_=3, to=100001,
                              increment=2, width=6, command=self.apply_controls)
-        window.pack(side=tk.LEFT, padx=(4, 6))
+        window.pack(side=tk.LEFT, padx=(4, 4))
         unit = ttk.Combobox(sizes, textvariable=self.window_unit, state="readonly", width=7,
                             values=list(smoothing.UNITS.values()))
         unit.pack(side=tk.LEFT)
         unit.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
-        orders = ttk.Frame(body)
+        orders = ttk.Frame(top)
         ttk.Label(orders, text="Order").pack(side=tk.LEFT)
-        order = ttk.Spinbox(orders, textvariable=self.order, from_=0, to=10, width=3,
+        order = ttk.Spinbox(orders, textvariable=self.order, from_=0, to=10, width=2,
                             command=self.apply_controls)
         order.pack(side=tk.LEFT, padx=(4, 0))
-        hint = ttk.Label(body, foreground=theme.HINT, wraplength=230)
-        hint.pack(anchor=tk.W)
         for box in (window, order):
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_controls())
@@ -505,10 +525,9 @@ class Plotter(tk.Tk):
             body.refresh()
             # Order only means something for Savitzky–Golay.
             if self.panel.line.smooth == "savgol":
-                orders.pack(anchor=tk.W, pady=(4, 0), after=sizes)
+                orders.pack(side=tk.LEFT, padx=(10, 0))
             else:
                 orders.pack_forget()
-            hint["text"] = "in plotted x" if self.panel.line.in_x else "in data points"
         self.smooth.show = refresh
 
     def _background_box(self, parent):
@@ -525,29 +544,27 @@ class Plotter(tk.Tk):
             return f"Background{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
-        mode = ttk.Combobox(body, textvariable=self.fit_mode, state="readonly", width=24,
-                            values=list(background.MODES.values()))
-        mode.pack(anchor=tk.W, pady=(2, 0))
-        mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        # The mode and the polynomial's degree; then the x range fitted (blank
+        # ends: the whole line), typed or picked on the plot.
         row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Degree").pack(side=tk.LEFT)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        mode = ttk.Combobox(row, textvariable=self.fit_mode, state="readonly", width=9,
+                            values=list(background.MODES.values()))
+        mode.pack(side=tk.LEFT)
+        mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        ttk.Label(row, text="Degree").pack(side=tk.LEFT, padx=(10, 0))
         degree = ttk.Spinbox(row, textvariable=self.degree, from_=0, to=30, width=3,
                              command=self.apply_controls)
         degree.pack(side=tk.LEFT, padx=(4, 0))
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Fit x from").pack(side=tk.LEFT)
-        start = ttk.Entry(row, textvariable=self.fit_from, width=8)
+        ttk.Label(row, text="Fit x").pack(side=tk.LEFT)
+        start = ttk.Entry(row, textvariable=self.fit_from, width=7)
         start.pack(side=tk.LEFT, padx=(4, 4))
         ttk.Label(row, text="to").pack(side=tk.LEFT)
-        end = ttk.Entry(row, textvariable=self.fit_to, width=8)
-        end.pack(side=tk.LEFT, padx=(4, 0))
-        row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Button(row, text="Pick on plot", command=self.pick_range).pack(side=tk.LEFT)
-        ttk.Label(row, text="blank: whole line", foreground=theme.HINT).pack(
-            side=tk.LEFT, padx=(8, 0))
+        end = ttk.Entry(row, textvariable=self.fit_to, width=7)
+        end.pack(side=tk.LEFT, padx=(4, 6))
+        ttk.Button(row, text="Pick", width=5, command=self.pick_range).pack(side=tk.LEFT)
         for box in (degree, start, end):
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_controls())
@@ -566,11 +583,7 @@ class Plotter(tk.Tk):
         body = self._collapsible(parent, (10, 0), text, start_open=True)
         # For a data panel: the two ways to make its FFT.
         make = ttk.Frame(body)
-        ttk.Button(make, text="FFT to new panel",
-                   command=lambda: self.new_derived_panel("fft")).pack(anchor=tk.W, pady=(2, 0))
-        ttk.Button(make, text="FFT to existing panel...",
-                   command=lambda: self.existing_derived_panel("fft")).pack(
-            anchor=tk.W, pady=(4, 0))
+        self._make_buttons(make, lambda: "fft")
         ttk.Label(make, text="use 1/x on B for F in T", foreground=theme.HINT).pack(
             anchor=tk.W)
         # For an FFT panel: its settings.
@@ -622,6 +635,17 @@ class Plotter(tk.Tk):
             self.f_max.set("" if p.f_max is None else f"{p.f_max:g}")
         self.fft_window.show = refresh
 
+    def _make_buttons(self, parent, operation):
+        """'New panel' and 'Existing panel...' on a row, making the derived panel
+        `operation()` names; the section's toggle says which it is."""
+        row = ttk.Frame(parent)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Button(row, text="New panel",
+                   command=lambda: self.new_derived_panel(operation())).pack(side=tk.LEFT)
+        ttk.Button(row, text="Existing panel...",
+                   command=lambda: self.existing_derived_panel(operation())).pack(
+            side=tk.LEFT, padx=(6, 0))
+
     def _derivative_box(self, parent):
         """A 'Derivative' toggle: make a derivative panel of this one, or set one up."""
         self.derivative_order = tk.StringVar(value="d1")  # also the new panel's, for a data panel
@@ -647,13 +671,7 @@ class Plotter(tk.Tk):
             orders.append(button)
         # For a data panel: the two ways to make its derivative.
         make = ttk.Frame(body)
-        ttk.Button(make, text="Derivative to new panel",
-                   command=lambda: self.new_derived_panel(self.derivative_order.get())).pack(
-            anchor=tk.W, pady=(4, 0))
-        ttk.Button(make, text="Derivative to existing panel...",
-                   command=lambda: self.existing_derived_panel(self.derivative_order.get())).pack(
-            anchor=tk.W, pady=(4, 0))
-        ttk.Label(make, text="against the plotted x", foreground=theme.HINT).pack(anchor=tk.W)
+        self._make_buttons(make, self.derivative_order.get)
         # For a derivative panel: its settings.
         settings = ttk.Frame(body)
         source_label = ttk.Label(settings, foreground=theme.MUTED, wraplength=230)
@@ -701,17 +719,17 @@ class Plotter(tk.Tk):
         body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
         status = ttk.Label(body, foreground=theme.MUTED, wraplength=230)
         status.pack(anchor=tk.W, pady=(2, 0))
+        # Link, unlink and freeze (pause syncing, keeping the link), on a row.
         row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Button(row, text="Link to panel...", command=self.link_panels).pack(side=tk.LEFT)
-        unlink = ttk.Button(row, text="Unlink panel", command=self.unlink_panel)
-        unlink.pack(side=tk.LEFT, padx=(6, 0))
-        freeze = ttk.Button(body, command=self.freeze)
-        freeze.pack(anchor=tk.W, pady=(4, 0))
-        freeze_hint = ttk.Label(body, foreground=theme.HINT)
-        freeze_hint.pack(anchor=tk.W)
-        # What this panel shares with the group, in two columns: the data
-        # input on the left, how it's processed and looks on the right.
+        row.pack(fill=tk.X, pady=(4, 0))
+        row.columnconfigure((0, 1, 2), weight=1, uniform="link")
+        ttk.Button(row, text="Link...", width=1, command=self.link_panels).grid(
+            row=0, column=0, sticky="ew")
+        unlink = ttk.Button(row, text="Unlink", width=1, command=self.unlink_panel)
+        unlink.grid(row=0, column=1, sticky="ew", padx=6)
+        freeze = ttk.Button(row, width=1, command=self.freeze)
+        freeze.grid(row=0, column=2, sticky="ew")
+        # What this panel shares with the group, in pairs: x beside y, and so on.
         ttk.Label(body, text="Sync").pack(anchor=tk.W, pady=(12, 2))
         boxes = ttk.Frame(body)
         boxes.pack(anchor=tk.W, fill=tk.X)
@@ -719,8 +737,8 @@ class Plotter(tk.Tk):
         names = {"run": "Dataset", "x": "X axis", "x_fn": "X function", "y": "Y axis",
                  "y_fn": "Y function", "colour": "Colour", "smoothing": "Smoothing",
                  "background": "Background", "style": "Line style"}
-        places = {"run": (0, 0), "x": (1, 0), "x_fn": (2, 0), "y": (3, 0), "y_fn": (4, 0),
-                  "smoothing": (0, 1), "background": (1, 1), "colour": (2, 1), "style": (3, 1)}
+        places = {"run": (0, 0), "colour": (0, 1), "x": (1, 0), "y": (1, 1), "x_fn": (2, 0),
+                  "y_fn": (2, 1), "smoothing": (3, 0), "background": (3, 1), "style": (4, 0)}
         for key in SYNC:
             var = self.sync_vars[key] = tk.BooleanVar()
             row, col = places[key]
@@ -739,8 +757,6 @@ class Plotter(tk.Tk):
             unlink.state(["!disabled" if others else "disabled"])
             freeze["text"] = "Unfreeze" if frozen else "Freeze"
             freeze.state(["!disabled" if others else "disabled"])
-            freeze_hint["text"] = ("sends its settings to the others" if frozen
-                                   else "pause syncing, keep the link")
             synced = self.panels[self.selected].synced
             for key, var in self.sync_vars.items():
                 var.set(key in synced)

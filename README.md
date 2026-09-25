@@ -119,9 +119,9 @@ stay until it's done or cancelled.
   degree to the plotted y against the plotted x (so in 1/B with a `1/x`
   function) and either **Subtract**s it, leaving the oscillations, or
   **Show fit**, which draws the fit dashed in place of the data; copy a line
-  with + to lay its fit over it. **Fit x from ... to** limits the fit to part
+  with + to lay its fit over it. **Fit x ... to** limits the fit to part
   of the line (leave out the parked ends of a sweep); outside it the line
-  isn't drawn. **Pick on plot** sets the range by dragging across the plot.
+  isn't drawn. **Pick** sets the range by dragging across the plot.
   The fit comes before smoothing.
 - **Line editor**: the box under + and -, which shows the selected line's
   look, opens it. **Colour** (drag in the field and the brightness strip;
@@ -149,8 +149,8 @@ stay until it's done or cancelled.
   click. **Ticks**: **Point inward** turns every panel's tick marks to point
   into the plot instead of out (off to start with); it's a preference for
   all panels, kept in `settings.json` until you untick it.
-- **FFT** (Operations tab): **FFT to new panel** adds a row with the selected panel's spectrum
-  under it; **FFT to existing panel...** puts it in the panel you click next
+- **FFT** (Operations tab): **New panel** adds a row with the selected panel's spectrum
+  under it; **Existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The new panel is linked
   to the data panel (see Linked data below, and the Linking tab) with every
   Sync box ticked on both, so changing a line's axes, fit, smoothing or
@@ -164,9 +164,8 @@ stay until it's done or cancelled.
   panel plotting its lines (still linked). Its title gives the frequency resolution,
   ΔF = 1 / (x range).
 - **Derivative** (Operations tab): works like FFT. Choose the **Order**
-  (First or Second), then **Derivative to new panel** or **Derivative to
-  existing panel...** (clicking an FFT panel of the same data turns it into
-  the derivative). The panel shows dy/dx or d²y/dx² of each line as plotted,
+  (First or Second), then **New panel** or **Existing panel...** (clicking
+  an FFT panel of the same data turns it into the derivative). The panel shows dy/dx or d²y/dx² of each line as plotted,
   against its plotted x, linked to its data panel the same way. As the rows
   jitter and double back in x, each line is first averaged onto an even grid
   in x, and each point's derivative is read off a Savitzky–Golay fit over
@@ -174,7 +173,7 @@ stay until it's done or cancelled.
   panel to change its order or window, or go **Back to data**. Derivatives magnify
   noise, the second much more than the first, so widen the window until
   the curve is steady; a jump in the data shows as a spike.
-- **Linked data** (Linking tab): **Link to panel...** then click another
+- **Linked data** (Linking tab): **Link...** then click another
   panel, and the two share their lines' settings, line by line (the selected
   panel takes the other's number of lines, asking first if some of its own
   would go). From then on adding or removing a line in one does the same in
@@ -191,7 +190,7 @@ stay until it's done or cancelled.
   sync between panels with the same x. FFT and derivative panels are linked
   panels too, so all of this works on them. Axis ranges and zoom stay each panel's own. Any number of panels
   can join (linking two groups merges them); the selected panel's linked
-  partners get a dashed frame. **Unlink panel** takes the selected one out,
+  partners get a dashed frame. **Unlink** takes the selected one out,
   keeping what it plots. **Freeze** pauses the selected panel's link without
   leaving the group: nothing it syncs crosses to or from it (adding or
   removing a line still happens in all of them, so lines stay paired), and
