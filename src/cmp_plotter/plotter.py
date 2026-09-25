@@ -154,6 +154,7 @@ class Plotter(tk.Tk):
         self._fft_box(controls)
         self._link_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
+        self._bind_keys()
 
         # Saving sits at the bottom of the column, below the scrolling part,
         # with the status above it so the buttons stay at the very bottom.
@@ -162,7 +163,10 @@ class Plotter(tk.Tk):
         ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(8, 2))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
-        ttk.Entry(save, textvariable=self.filename, width=26).pack(anchor=tk.W)
+        name_box = ttk.Entry(save, textvariable=self.filename, width=26)
+        name_box.pack(anchor=tk.W)
+        for key in ("<Return>", "<KP_Enter>"):
+            name_box.bind(key, lambda _: self.save())
         buttons = ttk.Frame(save)
         buttons.pack(anchor=tk.W, pady=(8, 0))
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
@@ -183,6 +187,56 @@ class Plotter(tk.Tk):
         self._load_controls()
         if profile_error:
             self._say(profile_error, error=True)
+
+    # --- keyboard ---------------------------------------------------------
+
+    def _bind_keys(self):
+        """Shortcuts for the main window (the dialogs are other toplevels, so
+        these don't fire there). Keys a text box uses are left to it."""
+        for key in ("s", "S"):  # S: with Caps Lock on
+            self.bind(f"<Control-{key}>", lambda _: self.save())
+        for key in ("d", "D"):
+            self.bind(f"<Control-{key}>", lambda _: self.add_line())
+        # Entries delete a character on Ctrl+D; here it copies the line instead.
+        for cls in ("TEntry", "TSpinbox", "TCombobox"):
+            for key in ("d", "D"):
+                self.bind_class(cls, f"<Control-{key}>", lambda _: None)
+        self.bind("<Delete>", lambda e: self._typing(e) or self.remove_line())
+        # Up/Down step through lines; the Lines list and the boxes (a combobox
+        # opens on Down) do their own thing with them.
+        for key, step in (("<Up>", -1), ("<Down>", 1)):
+            self.bind(key, lambda e, step=step: (
+                isinstance(e.widget, (tk.Listbox, tk.Entry, ttk.Entry))
+                or self._step_line(step)))
+        for key, move in (("Left", (0, -1)), ("Right", (0, 1)), ("Up", (-1, 0)),
+                          ("Down", (1, 0))):
+            self.bind(f"<Control-{key}>", lambda e, move=move: (
+                self._typing(e) or self._step_panel(*move)))
+
+    @staticmethod
+    def _typing(event):
+        """Whether the key went to a box that can be typed in."""
+        w = event.widget
+        return isinstance(w, (tk.Entry, ttk.Entry)) and "readonly" not in str(w.cget("state"))
+
+    def _step_line(self, step):
+        at = self.panel.selected + step
+        if 0 <= at < len(self.panel.lines):
+            self._select_line(at)
+
+    def _step_panel(self, dr, dc):
+        """Select the panel beside the selected one, if there is one."""
+        cell = (self.selected[0] + dr, self.selected[1] + dc)
+        if cell in self.axes:
+            self.stop_picking()
+            self._select_panel(cell)
+
+    def _select_panel(self, cell):
+        self.selected = cell
+        for c in self.axes:
+            self._frame(c)
+        self._load_controls()
+        self.canvas.draw()
 
     # --- controls ---------------------------------------------------------
 
@@ -920,6 +974,8 @@ class Plotter(tk.Tk):
         """Select the clicked panel, and the line under the mouse if any."""
         if self.picker:  # the click starts a fit-range drag instead
             return
+        # Out of any box, so the shortcuts for lines and panels work next.
+        self.canvas.get_tk_widget().focus_set()
         cell = next((c for c, ax in self.axes.items() if ax is event.inaxes), None)
         if cell is None:
             return
@@ -929,17 +985,13 @@ class Plotter(tk.Tk):
         if self.link_pick is not None:  # the click chooses whose data to link to
             self._link(self.link_pick, cell)
             return
-        old, self.selected = self.selected, cell
         hit = next((i for artist, i in self.artists[cell].items()
                     if artist.contains(event)[0]), None)
         if hit is not None:
             self._set_selected_line(cell, hit)
-        elif cell == old:
+        elif cell == self.selected:
             return  # clicked empty space in the panel already selected
-        for c in self.axes:
-            self._frame(c)
-        self._load_controls()
-        self.canvas.draw()
+        self._select_panel(cell)
 
     def choose_layout(self):
         LayoutPicker(self, self.rows, self.cols, self.set_layout)

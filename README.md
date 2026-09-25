@@ -147,6 +147,20 @@ keeps them.
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
 
+### Keyboard
+
+| Key | Does |
+|---|---|
+| Ctrl+S | Save figure (Enter in Save as does too) |
+| Ctrl+D | copy the selected line (+) |
+| Delete | remove the selected line (-) |
+| Up / Down | select the previous / next line |
+| Ctrl+arrow keys | select the panel beside the selected one |
+| Esc | stop picking a fit range or a panel |
+
+Delete and the arrow keys are left alone while you type in a box; click
+the plot to get out of it.
+
 ## Profiles
 
 A `cmp-plotter.json` in the data folder tells the plotter about that folder's
