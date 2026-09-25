@@ -13,7 +13,8 @@ from PIL import Image, ImageDraw, ImageTk
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
 from cmp_plotter import background, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import LINKED, Panel, legend_labels, line_colours, shared
+from cmp_plotter.model import (LINKED, RANGES, Panel, clear_ranges, legend_labels,
+                               line_colours, shared)
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -151,6 +152,9 @@ class Plotter(tk.Tk):
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
+        # Above: the selected line. Below: the selected panel.
+        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
+        self._axes_box(controls)
         self._fft_box(controls)
         self._link_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
@@ -442,6 +446,43 @@ class Plotter(tk.Tk):
                 box.bind(key, lambda _: self.apply_controls())
         self.fit_mode.show = body.refresh
 
+    def _axes_box(self, parent):
+        """A collapsed 'Axes' toggle: the selected panel's x and y ranges."""
+        self.ranges = {name: tk.StringVar() for name in RANGES}
+
+        def text(is_open):
+            p = self.panel
+            used = any(getattr(p, name) is not None for name in RANGES)
+            return "Axes: range set" if used and not is_open else "Axes"
+
+        body = self._collapsible(parent, (10, 0), text)
+        boxes = []
+        for axis in "xy":
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(4, 0))
+            ttk.Label(row, text=f"{axis} from", width=6).pack(side=tk.LEFT)
+            low = ttk.Entry(row, textvariable=self.ranges[f"{axis}_min"], width=9)
+            low.pack(side=tk.LEFT, padx=(4, 4))
+            ttk.Label(row, text="to").pack(side=tk.LEFT)
+            high = ttk.Entry(row, textvariable=self.ranges[f"{axis}_max"], width=9)
+            high.pack(side=tk.LEFT, padx=(4, 0))
+            boxes += [low, high]
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Button(row, text="Use current view", command=self.use_view).pack(side=tk.LEFT)
+        ttk.Label(row, text="blank: automatic", foreground=theme.HINT).pack(
+            side=tk.LEFT, padx=(8, 0))
+        for box in boxes:
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_axes())
+
+        def refresh():
+            body.refresh()
+            for name, var in self.ranges.items():
+                value = getattr(self.panel, name)
+                var.set("" if value is None else f"{value:.6g}")
+        self.ranges_show = refresh
+
     def _fft_box(self, parent):
         """A collapsed 'FFT' toggle: make an FFT panel of this one, or set one up."""
         self.fft_window, self.fft_pad, self.f_max = tk.StringVar(), tk.StringVar(), tk.StringVar()
@@ -642,6 +683,7 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
+        self.ranges_show()
         self.fft_window.show()
         self.link_status()
         self._say("")  # errors pop up instead; see apply_controls
@@ -668,6 +710,7 @@ class Plotter(tk.Tk):
         self.stop_picking()
         l = self.panel.line
         before, old_x = l.shown, (l.x, l.x_fn)
+        old_y = (l.y, l.y_fn, l.background == "subtract")
         l.run = self.run.get()
         l.x, l.y = without_unit(self.x.get()) or l.x, without_unit(self.y.get()) or l.y
         l.x_fn, l.y_fn = self.x_fn.get().strip(), self.y_fn.get().strip()
@@ -694,6 +737,9 @@ class Plotter(tk.Tk):
         if (l.x, l.x_fn) != old_x:
             # A window or range in the old x means nothing in the new one.
             l.span = l.fit_from = l.fit_to = None
+            self._clear_ranges(self.panel.lines, "x")
+        if (l.y, l.y_fn, l.background == "subtract") != old_y:
+            self._clear_ranges(self.panel.lines, "y")
         self._sync_inputs(self.selected)
         if l.run in self.datasets and l.run not in self.frames:
             try:
@@ -925,6 +971,11 @@ class Plotter(tk.Tk):
                 for artist, text in zip(ax.lines, legend_labels(drawn)):
                     artist.set_label(text)
                 ax.legend(fontsize=8)
+            # Typed ranges; an end left blank stays where autoscaling put it.
+            if p.x_min is not None or p.x_max is not None:
+                ax.set_xlim(p.x_min, p.x_max)
+            if p.y_min is not None or p.y_max is not None:
+                ax.set_ylim(p.y_min, p.y_max)
             if fft and errors:  # some lines drawn, others not: say why
                 ax.text(0.01, 0.99, errors[0], ha="left", va="top", transform=ax.transAxes,
                         color=theme.ERROR, fontsize=8)
@@ -1014,6 +1065,11 @@ class Plotter(tk.Tk):
 
     def swap(self):
         """Swap X and Y, with their functions (x <-> y), for every line in the panel."""
+        data, *ffts = self._linked(self.selected)
+        p = self.panels[data]  # the data panel's ranges swap with its axes
+        p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
+        for c in ffts:  # a spectrum of the other axis: nothing like the old one
+            clear_ranges(self.panels[c])
         for l in self.panel.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
@@ -1049,6 +1105,7 @@ class Plotter(tk.Tk):
         """Make an FFT panel an ordinary data panel with its own copies of the lines."""
         p.lines = [l.copy() for l in p.lines]
         p.source = None
+        clear_ranges(p)  # in frequency; it's back to plotting the data
 
     def fft_new_panel(self):
         """Add a row below the grid, with the selected panel's FFT under it."""
@@ -1124,6 +1181,36 @@ class Plotter(tk.Tk):
             self._build_axes()
             self._load_controls()
 
+    # --- axes -------------------------------------------------------------
+
+    def apply_axes(self):
+        """Copy the Axes box into the selected panel and redraw it."""
+        self.stop_picking()
+        p = self.panel
+        for name, var in self.ranges.items():
+            try:
+                setattr(p, name, float(var.get()) if var.get().strip() else None)
+            except ValueError:  # not a number: keep the old one (shown again below)
+                pass
+        problem = ""
+        for axis in "xy":
+            low, high = getattr(p, f"{axis}_min"), getattr(p, f"{axis}_max")
+            if low is not None and high is not None and low == high:
+                problem = f"The {axis} range needs two different ends."
+                setattr(p, f"{axis}_max", None)
+        # Not the old view: that would put back the range just changed.
+        self._redraw_selected(keep="")
+        if problem:  # after the redraw, which clears the status
+            self._say(problem, error=True)
+
+    def use_view(self):
+        """Fill the range boxes with what the selected panel shows now, e.g. after zooming."""
+        ax = self.axes[self.selected]
+        for axis, (low, high) in (("x", ax.get_xlim()), ("y", ax.get_ylim())):
+            self.ranges[f"{axis}_min"].set(f"{low:.6g}")
+            self.ranges[f"{axis}_max"].set(f"{high:.6g}")
+        self.apply_axes()
+
     # --- linked data ------------------------------------------------------
 
     def _link_groups(self):
@@ -1159,6 +1246,13 @@ class Plotter(tk.Tk):
                 lists.append(self.panels[c].lines)
         return lists
 
+    def _clear_ranges(self, lines, axes):
+        """Clear typed ranges on every panel drawing `lines` (a data panel and its
+        FFT panels), when what's plotted on those axes changes."""
+        for p in self.panels.values():
+            if p.lines is lines:
+                clear_ranges(p, axes)
+
     def _sync_inputs(self, cell):
         """Give the linked panels' lines the same data input and colour as
         `cell`'s, line by line."""
@@ -1167,6 +1261,9 @@ class Plotter(tk.Tk):
             for mine, theirs in zip(lines, source):
                 if (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
                     mine.span = mine.fit_from = mine.fit_to = None  # in the old x
+                    self._clear_ranges(lines, "x")
+                if (mine.y, mine.y_fn) != (theirs.y, theirs.y_fn):
+                    self._clear_ranges(lines, "y")
                 for attr in LINKED:
                     setattr(mine, attr, getattr(theirs, attr))
 

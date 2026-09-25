@@ -109,6 +109,12 @@ keeps them.
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick on plot** sets the range by dragging across the plot.
   The fit comes before smoothing.
+- **Axes**: per panel, under Background. Type an x or y range (**from** /
+  **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
+  function; leave an end blank to let it follow the data. **Use current
+  view** fills the boxes from what the panel shows, e.g. after zooming, to
+  pin it. A range is cleared when what's on its axis changes (another column
+  or function), and ⇅ swaps the x and y ranges.
 - **FFT**: **FFT to new panel** adds a row with the selected panel's spectrum
   under it; **FFT to existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The two panels are locked

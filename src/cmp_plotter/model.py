@@ -78,14 +78,30 @@ class Panel:
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
     link_group: int | None = None  # panels with the same number plot the same data
+    # Typed axis ranges, in the plotted units; None: that end is automatic.
+    x_min: float | None = None
+    x_max: float | None = None
+    y_min: float | None = None
+    y_max: float | None = None
 
     @property
     def line(self):
         return self.lines[self.selected]
 
     def copy(self):
-        """An independent data panel with copies of the lines."""
+        """An independent data panel with copies of the lines (and nothing else of
+        the panel's: ranges and such start fresh)."""
         return Panel([l.copy() for l in self.lines], self.selected)
+
+
+RANGES = ("x_min", "x_max", "y_min", "y_max")
+
+
+def clear_ranges(panel, axes="xy"):
+    """Forget typed ranges on those axes, e.g. when what's plotted on them changes."""
+    for name in RANGES:
+        if name[0] in axes:
+            setattr(panel, name, None)
 
 
 def near(colour, others, distance=0.25):

@@ -100,6 +100,17 @@ axis ranges and zoom are each panel's own. So:
 - A group's FFT panel shares one member's list, so `_group_lists`
   deduplicates by identity: never replace a list, only change it in place.
 
+## Typed axis ranges
+
+`Panel.x_min` ... `y_max` (`model.RANGES`) are in the plotted units, like
+the x-unit line settings, so they're cleared the same way: `_clear_ranges`
+(every panel drawing a list, FFT panels included) when a line's x or y
+changes, including a linked member's in `_sync_inputs`; ⇅ swaps the data
+panel's and clears its FFT panels'; `_unlink` clears them. `_draw_panel`
+applies them after drawing, which turns autoscaling off, so the zoom-keeping
+in `_redraw_selected` treats them as user-set: after changing them, redraw
+with `keep=""` (as `apply_axes` does) or the old range comes back.
+
 ## Things that look odd but are deliberate
 
 - **Row order, not sorted x.** The field record jitters (hundreds of direction
