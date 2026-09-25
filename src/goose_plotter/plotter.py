@@ -249,10 +249,10 @@ class Plotter(tk.Tk):
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
         self.tabs = {}
-        # The column's width shared by the names' widths (equal quarters would
-        # cut off "Operations"); width 1, so the strip never widens the column.
+        # The column's width shared by the names' widths, so a longer name isn't
+        # cut off; width 1, so the strip never widens the column.
         font = tkfont.Font(self, font=ttk.Style().lookup("Tab.Toolbutton", "font") or "TkDefaultFont")
-        for i, name in enumerate(("Process", "Splicing", "Operations", "Linking")):
+        for i, name in enumerate(("Process", "Splicing", "Derive", "Linking")):
             strip.columnconfigure(i, weight=font.measure(name) + 4)  # + the padding
             ttk.Radiobutton(strip, text=name, value=name, variable=self.tab, width=1,
                             style="Tab.Toolbutton", command=self._show_tab).grid(
@@ -262,8 +262,8 @@ class Plotter(tk.Tk):
         self._smoothing_box(self.tabs["Process"])
         self._background_box(self.tabs["Process"])
         self._splicing_box(self.tabs["Splicing"])
-        self._fft_box(self.tabs["Operations"])
-        self._derivative_box(self.tabs["Operations"])
+        self._fft_box(self.tabs["Derive"])
+        self._derivative_box(self.tabs["Derive"])
         self._link_box(self.tabs["Linking"])
         self.tab.set("Process")
         self._show_tab()

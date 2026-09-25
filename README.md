@@ -88,7 +88,7 @@ At the top of the controls column, **Files** opens to the folders, Data
 format and sessions (it starts closed once both folders are chosen). Under
 it Dataset, the Lines list and the axes are always shown, and the rest is in
 four tabs: **Process** (Smoothing, Background), **Splicing** (cutting lines
-to parts of their x), **Operations** (FFT, Derivative) and **Linking** (Linked
+to parts of their x), **Derive** (FFT, Derivative) and **Linking** (Linked
 data); their sections start open. If
 the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
@@ -167,7 +167,7 @@ stay until it's done or cancelled.
   click. **Ticks**: **Point inward** turns every panel's tick marks to point
   into the plot instead of out (off to start with); it's a preference for
   all panels, kept in `settings.json` until you untick it.
-- **FFT** (Operations tab): **New panel** adds a row with the selected panel's spectrum
+- **FFT** (Derive tab): **New panel** adds a row with the selected panel's spectrum
   under it; **Existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The new panel is linked
   to the data panel (see Linked data below, and the Linking tab) with every
@@ -181,7 +181,7 @@ stay until it's done or cancelled.
   peaks), F max, and **Back to data**, which turns it back into an ordinary
   panel plotting its lines (still linked). Its title gives the frequency resolution,
   ΔF = 1 / (x range).
-- **Derivative** (Operations tab): works like FFT. Choose the **Order**
+- **Derivative** (Derive tab): works like FFT. Choose the **Order**
   (First or Second), then **New panel** or **Existing panel...** (clicking
   an FFT panel of the same data turns it into the derivative). The panel shows dy/dx or d²y/dx² of each line as plotted,
   against its plotted x, linked to its data panel the same way. As the rows

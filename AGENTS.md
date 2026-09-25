@@ -96,7 +96,7 @@ them (unlinked, deleted, removed by the layout). So:
 
 - Check `derived` / `operation`, never `source`, for whether a panel is
   derived. `operation` only matters where FFTs and derivatives differ
-  (drawing, the Operations boxes, `_default_name`).
+  (drawing, the Derive tab's boxes, `_default_name`).
 - Derived panels are only made from data panels (no FFT of a derivative),
   and there's no fit- or cut-range picking on them. Putting one on a panel already
   derived from the same data just changes its `operation`. **Back to data**
@@ -207,8 +207,8 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
-- **The tab strip shares the column's width by the tabs' names**: equal
-  quarters cut off "Operations". Each is `width=1`, so the strip never widens
+- **The tab strip shares the column's width by the tabs' names**, so a
+  longer name isn't cut off. Each is `width=1`, so the strip never widens
   the column.
 - **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
   tab, which would keep the column long. `_show_tab` packs one frame of
