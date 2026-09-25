@@ -15,8 +15,8 @@ delimiter are detected automatically.
    ```
 2. Get the code:
    ```bash
-   git clone https://github.com/Quarrinexus/CMP-Plotter.git
-   cd CMP-Plotter
+   git clone https://github.com/Quarrinexus/GOOSE-Plotter.git
+   cd GOOSE-Plotter
    ```
 3. Run it. The first run downloads Python 3.13 and the dependencies into
    `.venv`; later runs start straight away.
@@ -35,8 +35,8 @@ In PowerShell:
    ```
 2. Get the code, either with [Git for Windows](https://git-scm.com/download/win):
    ```powershell
-   git clone https://github.com/Quarrinexus/CMP-Plotter.git
-   cd CMP-Plotter
+   git clone https://github.com/Quarrinexus/GOOSE-Plotter.git
+   cd GOOSE-Plotter
    ```
    or by downloading the ZIP from GitHub (Code > Download ZIP), extracting
    it, and running `cd` into the extracted folder.
