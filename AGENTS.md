@@ -77,43 +77,42 @@ Keep that order. Things that depend on it:
   `_show_error` shows the selected line's under the axes boxes; it runs from
   `_load_controls`, which every redraw path ends in, so there's no popup.
 
-## Derived panels are locked to a data panel
+## Derived panels are linked panels
 
-A `Panel` with a `source` is a derived panel: `Panel.operation` says which,
-"fft" (the default, so sessions from before derivatives load as FFTs), "d1"
-or "d2". Most code only asks whether there's a source; check `operation`
-only where FFTs and derivatives differ (drawing, the Operations boxes,
-`_default_name`). Its `lines` *is* the source panel's list, the same object, which is what keeps the two in sync: edits,
-colours, added and removed lines all show in both with no copying. So:
+`Panel.operation` makes a derived panel: "fft", "d1" or "d2" ("" is a data
+panel; `Panel.derived`). It draws that of its own lines. `_derived` makes
+one with copies of its data panel's lines, in that panel's link group, with
+every SYNC key ticked on both, so it follows every change through the link
+(see below) and can be frozen or partly synced like any linked panel.
+`source` is only the cell it was made from, for "FFT of panel N";
+`_tidy_link_groups` clears it once the panel no longer shares a group with
+that one (unlinked, deleted, removed by the layout). So:
 
-- Redraw with `_redraw_selected`, which redraws every panel in
-  `_linked(cell)`, data panel first: a derived panel only draws lines whose
-  `shown` its data panel set, and leaves `shown` and `error` alone.
-  `_build_axes` likewise draws data panels before derived panels.
-- Selecting a line goes through `_set_selected_line`, so the linked panels
-  select it too.
-- To break the link, use `_unlink`, which gives the panel copies of the lines.
-  `set_layout` does that when a source panel is removed, and `Panel.copy`
-  always makes an independent data panel.
+- Check `derived` / `operation`, never `source`, for whether a panel is
+  derived. `operation` only matters where FFTs and derivatives differ
+  (drawing, the Operations boxes, `_default_name`).
 - Derived panels are only made from data panels (no FFT of a derivative),
   and there's no fit-range picking on them. Putting one on a panel already
-  derived from the same data just changes its `operation`.
+  derived from the same data just changes its `operation`. **Back to data**
+  (`back_to_data`) sets it to "".
+- `_line_data` caches by `_data_key` (the settings through smoothing), not
+  by line, so a data panel and its derived panels do the work once; a hit
+  also fills in an x-unit span the line hasn't got yet. `_changed` prunes it
+  to the lines still in the panels.
 - `spectrum.even_grid` bins at bin centres for FFTs; derivatives pass
   `at_mean_x`, since the half-step error there becomes noise once
   differentiated. Keep the FFT's binning as it is unless you mean to change
   its output.
 
-## Linked data is a different link
+## Linked data
 
 `Panel.link_group` puts panels in a group whose lines match line by line:
 the panels have the same number of lines, and share the settings they sync.
 `model.SYNC` maps each Sync tick box's key to the `Line` fields it covers;
 `Panel.sync` is the space-separated keys a panel ticks (a string, so sessions
 save it as they are), read through `Panel.synced`. A key syncs between two
-panels only if both tick it. An FFT panel's lines are its data panel's, so
-`_sync_panel` gives the data panel's ticks for either. Unlike FFT panels,
-linked panels have their own `Line` objects, and axis ranges and zoom are
-each panel's own. So:
+panels only if both tick it. Each panel has its own `Line` objects, and
+axis ranges and zoom are each panel's own. So:
 
 - After changing a line's settings, call `_sync_inputs(cell)`, which copies
   the ones both sides sync to the group (clearing a member's x-unit settings
@@ -122,7 +121,7 @@ each panel's own. So:
   `SYNC`'s "x" before the keys holding x-unit settings: that clearing runs
   after x is copied. Add and remove lines through `add_line` /
   `remove_line`, which do it in every list in `_group_lists`.
-- `Panel.frozen` (on the `_sync_panel`, like `sync`) makes `_sync_inputs`
+- `Panel.frozen` makes `_sync_inputs`
   skip it both ways; `freeze` sends its settings on unfreezing. Lines are
   still added and removed across frozen panels, so pairs stay matched.
   Leaving a group (`unlink_panel`, `_tidy_link_groups`) unfreezes it.
@@ -135,9 +134,9 @@ each panel's own. So:
 
 `Panel.x_min` ... `y_max` (`model.RANGES`) are in the plotted units, like
 the x-unit line settings, so they're cleared the same way: `_clear_ranges`
-(every panel drawing a list, FFT panels included) when a line's x or y
-changes, including a linked member's in `_sync_inputs`; ⇅ swaps the data
-panel's and clears its FFT panels'; `_unlink` clears them. `_draw_panel`
+when a line's x or y changes, including a linked member's in
+`_sync_inputs`; ⇅ swaps a data panel's (a derived panel's are cleared);
+changing a derived panel's operation, or `back_to_data`, clears them. `_draw_panel`
 applies them after drawing, which turns autoscaling off, so the zoom-keeping
 in `_redraw_selected` treats them as user-set: after changing them, redraw
 with `keep=""` (as `apply_axes` does) or the old range comes back.
@@ -149,9 +148,9 @@ canvas draws, and on the real figure that would break every redraw after.
 ## Sessions
 
 `session.dump` / `session.load` turn `self.panels` into plain data and back;
-`Plotter._restore` swaps it in. An FFT panel is saved as its source cell, and
-`load` rebuilds it sharing the data panel's list (never a copy: see FFT
-panels above). `load` drops unknown or mistyped fields and menu values that
+`Plotter._restore` swaps it in. `dump` marks its output with `FORMAT`;
+without it `load` reads the version 1 layout (`_load_old`), where a derived
+panel had no lines of its own and every panel an "fft" operation. `load` drops unknown or mistyped fields and menu values that
 aren't keys, and raises ValueError for anything that isn't a session, before
 anything changes. A new `Line` or `Panel` field is saved automatically unless
 it's in `session.SKIP`; one whose value must be a menu key goes in

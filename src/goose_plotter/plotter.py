@@ -114,7 +114,7 @@ class Plotter(tk.Tk):
         self.picker = None  # the SpanSelector while a fit range is being dragged
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
         self.link_pick = None  # cell while the user clicks a panel to link its data to
-        self.cache = {}  # id(Line) -> (settings, its x, y and labels), see _line_data
+        self.cache = {}  # _data_key -> (x, y and labels, span), see _line_data
         # One step of undo: the state before the last change, and after it.
         self.undo_state = self.last_state = None
         self.merging = False  # the last change was a colour pick; see _changed
@@ -554,7 +554,7 @@ class Plotter(tk.Tk):
         def text(is_open):
             p = self.panel
             used = (f": of panel {self._number(p.source)}"
-                    if p.source and p.operation == "fft" and not is_open else "")
+                    if p.source is not None and p.operation == "fft" and not is_open else "")
             return f"FFT{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
@@ -587,7 +587,8 @@ class Plotter(tk.Tk):
         f_max = ttk.Entry(row, textvariable=self.f_max, width=8)
         f_max.pack(side=tk.LEFT, padx=(4, 8))
         ttk.Label(row, text="blank: all", foreground=theme.HINT).pack(side=tk.LEFT)
-        ttk.Button(settings, text="Unlink", command=self.unlink).pack(anchor=tk.W, pady=(6, 0))
+        ttk.Button(settings, text="Back to data", command=self.back_to_data).pack(
+            anchor=tk.W, pady=(6, 0))
         for box in (window, pad):
             box.bind("<<ComboboxSelected>>", lambda _: self.apply_fft())
         for key in ("<Return>", "<KP_Enter>"):
@@ -599,18 +600,17 @@ class Plotter(tk.Tk):
         def refresh():
             body.refresh()
             p = self.panel
-            shown = make if p.source is None else settings if p.operation == "fft" else other
+            shown = make if not p.derived else settings if p.operation == "fft" else other
             for frame in (make, settings, other):
                 if frame is not shown:
                     frame.pack_forget()
             shown.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if shown is other else 0)
-            if p.source is None:
+            if shown is make:
                 return
             if shown is other:
-                other["text"] = f"Select panel {self._number(p.source)} to make its FFT."
+                other["text"] = f"Select {self._data_panel_name(p)} to make its FFT."
                 return
-            source_label["text"] = (f"FFT of panel {self._number(p.source)}, locked to it: "
-                                    "its lines are shared.")
+            source_label["text"] = f"FFT of {self._derived_from(p)}"
             self.fft_window.set(spectrum.WINDOWS[p.window])
             self.fft_pad.set(str(p.pad))
             self.f_max.set("" if p.f_max is None else f"{p.f_max:g}")
@@ -624,7 +624,8 @@ class Plotter(tk.Tk):
         def text(is_open):
             p = self.panel
             used = (f": {derivative.ORDERS[p.operation].lower()} of panel {self._number(p.source)}"
-                    if p.source and p.operation != "fft" and not is_open else "")
+                    if p.source is not None and p.derived and p.operation != "fft"
+                    and not is_open else "")
             return f"Derivative{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
@@ -660,7 +661,8 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="points, odd", foreground=theme.HINT).pack(side=tk.LEFT)
         ttk.Label(settings, text="wider for less noise; 2nd needs more",
                   foreground=theme.HINT).pack(anchor=tk.W)
-        ttk.Button(settings, text="Unlink", command=self.unlink).pack(anchor=tk.W, pady=(6, 0))
+        ttk.Button(settings, text="Back to data", command=self.back_to_data).pack(
+            anchor=tk.W, pady=(6, 0))
         for key in ("<Return>", "<KP_Enter>"):
             window.bind(key, lambda _: self.apply_derivative())
         # For an FFT panel: where to make a derivative instead.
@@ -669,7 +671,7 @@ class Plotter(tk.Tk):
         def refresh():
             body.refresh()
             p = self.panel
-            derived = p.source is not None
+            derived = p.derived
             shown = make if not derived else other if p.operation == "fft" else settings
             for frame in (make, settings, other):
                 if frame is not shown:
@@ -678,12 +680,11 @@ class Plotter(tk.Tk):
             for button in orders:  # an FFT panel has no order to choose
                 button.state(["disabled" if shown is other else "!disabled"])
             if shown is other:
-                other["text"] = f"Select panel {self._number(p.source)} to make its derivative."
+                other["text"] = f"Select {self._data_panel_name(p)} to make its derivative."
             elif derived:
                 self.derivative_order.set(p.operation)
-                source_label["text"] = (f"{derivative.ORDERS[p.operation]} derivative of panel "
-                                        f"{self._number(p.source)}, locked to it: "
-                                        "its lines are shared.")
+                source_label["text"] = (f"{derivative.ORDERS[p.operation]} derivative of "
+                                        f"{self._derived_from(p)}")
                 self.derivative_window.set(p.derivative_window)
         self.derivative_order.show = refresh
 
@@ -724,7 +725,7 @@ class Plotter(tk.Tk):
 
         def refresh():
             others = self._link_partners(self.selected)
-            frozen = self._sync_panel(self.selected).frozen
+            frozen = self.panels[self.selected].frozen
             status["text"] = (f"Linked to panel{'s' if len(others) > 1 else ''} "
                               f"{self._numbers(others)}{', frozen' if frozen else ''}"
                               if others else "Not linked")
@@ -733,7 +734,7 @@ class Plotter(tk.Tk):
             freeze.state(["!disabled" if others else "disabled"])
             freeze_hint["text"] = ("sends its settings to the others" if frozen
                                    else "pause syncing, keep the link")
-            synced = self._sync_panel(self.selected).synced
+            synced = self.panels[self.selected].synced
             for key, var in self.sync_vars.items():
                 var.set(key in synced)
         self.link_status = refresh
@@ -932,7 +933,7 @@ class Plotter(tk.Tk):
         keep, others = "", ""
         if before and before[:5] == (l.run, l.x, l.x_fn, l.y, l.y_fn):
             keep = "xy" if before[6] == l.fitting else "x"
-            if self.panel.source:  # any change reshapes a spectrum
+            if self.panel.derived:  # any change reshapes a spectrum or derivative
                 keep = "x"
             others = "x"  # the other panels redrawn plot the same data as before
         self._redraw_selected(keep, others)
@@ -1042,8 +1043,7 @@ class Plotter(tk.Tk):
         grid = self.fig.subplots(self.rows, self.cols, squeeze=False)
         self.axes = {(r, c): grid[r, c] for r in range(self.rows) for c in range(self.cols)}
         self._tidy_link_groups()
-        # Data panels first: derived panels use what their data panel draws.
-        for cell in sorted(self.axes, key=lambda c: self.panels[c].source is not None):
+        for cell in self.axes:
             self._draw_panel(cell)
         self._update_filename()
         self.canvas.draw()
@@ -1053,10 +1053,15 @@ class Plotter(tk.Tk):
         """(x, y, x labels, y labels) for a line: its columns through its function,
         background and smoothing. Raises LineError, with the text Line.error holds.
 
-        Kept per line, so a data panel and its derived panels do the work once."""
-        cached = self.cache.get(id(l))
-        if cached and cached[0] == (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting):
-            return cached[1]
+        Kept by settings, so linked panels (a data panel and its FFT, say) with
+        the same line do the work once."""
+        cached = self.cache.get(self._data_key(l))
+        if cached:
+            result, span = cached
+            if l.smooth and l.in_x and l.span is None:
+                l.span = span  # as working it out would have set it
+            return result
+        key = self._data_key(l)  # before a missing span is filled in below
         stage = "Function"
         try:
             df = self._load(l)
@@ -1077,40 +1082,45 @@ class Plotter(tk.Tk):
         except Exception as err:  # bad file or function shouldn't kill the window
             raise LineError(f"{stage} error: {err}" if l.run in self.frames else str(err))
         result = x, y, x_label, y_label
-        self.cache[id(l)] = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting), result
+        self.cache[key] = self.cache[self._data_key(l)] = result, l.span
         return result
+
+    @staticmethod
+    def _data_key(l):
+        """What a line's data depends on: its settings through smoothing."""
+        return l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting
+
+    def _prune_cache(self):
+        """Keep only the data of lines still in the panels."""
+        wanted = {self._data_key(l) for p in self.panels.values() for l in p.lines}
+        for key in [k for k in self.cache if k not in wanted]:
+            del self.cache[key]
 
     def _draw_panel(self, cell):
         """Draw a panel's lines; problems are written into the panel itself.
 
-        A derived panel draws each line's spectrum or derivative. Its lines' own
-        errors are the data panel's to report, so it leaves Line.shown and
-        Line.error alone."""
+        A derived panel draws each line's spectrum or derivative."""
         ax, p = self.axes[cell], self.panels[cell]
-        derived = p.source is not None
-        fft = derived and p.operation == "fft"
+        derived, fft = p.derived, p.operation == "fft"
         ax.clear()
         self.artists[cell] = {}
         drawn, x_labels, y_labels, errors, resolutions = [], [], [], [], []
         for i, (l, colour) in enumerate(zip(p.lines, line_colours(p, self.profile.samples))):
-            if not derived:
-                l.shown, l.error = None, ""
+            l.shown, l.error = None, ""
             if not l.run:
                 continue
             try:
                 x, y, x_label, y_label = self._line_data(l)
             except LineError as err:
-                if not derived:
-                    l.error = str(err)
-                errors.append(str(err))
-                continue
-            if derived and not l.shown:  # its data panel couldn't draw it
+                l.error = str(err)
+                errors.append(l.error)
                 continue
             if fft:
                 try:
                     frequency, amplitude = spectrum.spectrum(x, y, p.window, p.pad)
                 except ValueError as err:
-                    errors.append(f"FFT error: {err}")
+                    l.error = f"FFT error: {err}"
+                    errors.append(l.error)
                     continue
                 if p.f_max:
                     below = frequency <= p.f_max
@@ -1124,13 +1134,13 @@ class Plotter(tk.Tk):
                 try:
                     x, y = derivative.derivative(x, y, int(p.operation[1]), p.derivative_window)
                 except ValueError as err:
-                    errors.append(f"Derivative error: {err}")
+                    l.error = f"Derivative error: {err}"
+                    errors.append(l.error)
                     continue
                 y_label = (derivative.LABELS[p.operation],) * 2
-            else:
-                # What's on screen, so Save names the plot shown rather than
-                # whatever is typed but not yet applied.
-                l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
+            # What's on screen, so Save names the plot shown rather than
+            # whatever is typed but not yet applied.
+            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
             (artist,) = ax.plot(x, y, color=colour, **l.plot_style())
             self.artists[cell][artist] = i
             drawn.append(l)
@@ -1142,8 +1152,9 @@ class Plotter(tk.Tk):
             ax.set_ylabel(p.y_label or shared(y_labels))
             heading = title(dict.fromkeys(l.run for l in drawn))
             if derived:  # short, as these often sit beside or under their data
-                name = "FFT" if fft else derivative.HEADINGS[p.operation]
-                heading = f"{name} of panel {self._number(p.source)}"
+                heading = "FFT" if fft else derivative.HEADINGS[p.operation]
+                if p.source is not None:
+                    heading += f" of panel {self._number(p.source)}"
             if fft and np.isfinite(resolutions[0]):  # the frequency resolution
                 heading += f" · ΔF {resolutions[0]:.3g}"
             ax.set_title(p.title or heading)
@@ -1172,8 +1183,6 @@ class Plotter(tk.Tk):
                         color=theme.ERROR, fontsize=8)
         elif errors:
             self._hint(ax, errors[0], colour=theme.ERROR, size=9)
-        elif derived:
-            self._hint(ax, f"Nothing plotted in panel {self._number(p.source)}")
         else:
             self._hint(ax, "Pick a dataset" if self.data_dir else "Pick a data folder")
         self._frame(cell)
@@ -1191,16 +1200,13 @@ class Plotter(tk.Tk):
 
     def _frame(self, cell):
         """Orange frame on the selected panel, when there's more than one, and a
-        paler one on the panels locked to it."""
+        paler dashed one on the panels linked to it (its FFTs and derivatives too)."""
         several = len(self.axes) > 1
-        partners = self._linked(self.selected) if self.selected in self.panels else ()
         if several and cell == self.selected:
             colour, width = SELECTED, 2.5
-        elif several and cell in partners:
-            colour, width = PARTNER, 2.0
         else:
             colour, width = "black", 0.8
-        # Dashed: plotting the same data as the selected panel (linked data).
+        # Dashed: linked to the selected panel.
         dashed = (colour == "black" and self.selected in self.panels
                   and cell in self._link_partners(self.selected))
         if dashed:
@@ -1246,9 +1252,8 @@ class Plotter(tk.Tk):
             (r, c): self.panels.get((r, c)) or template.copy()
             for r in range(rows) for c in range(cols)
         }
-        for p in self.panels.values():
-            if p.source is not None and p.source not in self.panels:
-                self._unlink(p)  # its data panel is gone; keep what it showed
+        # A derived panel whose data panel is gone keeps its lines and what it
+        # shows; _build_axes forgets that source.
         if self.selected not in self.panels:
             self.selected = (0, 0)
         self.rows, self.cols = rows, cols
@@ -1264,15 +1269,12 @@ class Plotter(tk.Tk):
             return
         order = sorted(self.panels)  # reading order
         gone, number = self.selected, self._number(self.selected)
-        for p in self.panels.values():
-            if p.source == gone:
-                self._unlink(p)  # its data panel is going; keep what it showed
         kept = [c for c in order if c != gone]
         moved = dict(zip(kept, order))  # old cell -> new cell
         panels = {moved[c]: self.panels[c] for c in kept}
-        for p in panels.values():
+        for p in panels.values():  # a panel derived from the deleted one keeps its lines
             if p.source is not None:
-                p.source = moved[p.source]
+                p.source = moved.get(p.source)
         if self.cols == 1:
             self.rows -= 1
         elif self.rows == 1:
@@ -1288,13 +1290,13 @@ class Plotter(tk.Tk):
 
     def swap(self):
         """Swap X and Y, with their functions (x <-> y), for every line in the panel."""
-        data, *ffts = self._linked(self.selected)
-        p = self.panels[data]  # the data panel's ranges swap with its axes
-        p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
-        p.x_label, p.y_label = p.y_label, p.x_label
-        for c in ffts:  # a spectrum of the other axis: nothing like the old one
-            clear_ranges(self.panels[c])
-        for l in self.panel.lines:
+        p = self.panel
+        if p.derived:  # a spectrum or derivative of the other axis: nothing like the old one
+            clear_ranges(p)
+        else:  # its ranges swap with its axes; linked panels' clear as their x and y change
+            p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
+            p.x_label, p.y_label = p.y_label, p.x_label
+        for l in p.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
             l.span = l.fit_from = l.fit_to = None  # in the old x; meaningless now
@@ -1307,10 +1309,14 @@ class Plotter(tk.Tk):
         """A panel's number as the user sees it: 1, 2, ... across then down."""
         return cell[0] * self.cols + cell[1] + 1
 
-    def _linked(self, cell):
-        """`cell` and the panels locked to it: the data panel, then its derived panels."""
-        source = self.panels[cell].source or cell
-        return [source] + [c for c, p in self.panels.items() if p.source == source]
+    def _derived_from(self, p):
+        """'panel 1, linked to it' for a derived panel, or what it is without one."""
+        if p.source is None:
+            return "its own lines; it no longer follows a panel."
+        return f"panel {self._number(p.source)}, linked to it (see Linking)."
+
+    def _data_panel_name(self, p):
+        return f"panel {self._number(p.source)}" if p.source is not None else "a data panel"
 
     @staticmethod
     def _kind(operation):
@@ -1319,7 +1325,7 @@ class Plotter(tk.Tk):
 
     def _derive_source(self, operation):
         """The selected panel, if it can have a derived panel made of it."""
-        if self.panel.source is not None:
+        if self.panel.derived:
             self._say(f"This panel is already {'an' if self.panel.operation == 'fft' else 'a'} "
                       f"{self._kind(self.panel.operation)}; select its data panel "
                       f"to make its {self._kind(operation)}.", error=True)
@@ -1327,17 +1333,16 @@ class Plotter(tk.Tk):
         return self.selected
 
     def _derived(self, source, operation):
-        """A new derived panel locked to `source`: it shares the very same list of lines."""
+        """A new derived panel of `source`: copies of its lines, in its link group
+        (starting one if it has none), sharing everything with it so it follows
+        every change, as a Sync tick list the user can then trim or Freeze."""
         p = self.panels[source]
-        return Panel(p.lines, p.selected, source=source, operation=operation)
-
-    @staticmethod
-    def _unlink(p):
-        """Make a derived panel an ordinary data panel with its own copies of the lines."""
-        p.lines = [l.copy() for l in p.lines]
-        p.source = None
-        clear_ranges(p)  # in frequency or dy/dx; it's back to plotting the data
-        p.title = p.x_label = p.y_label = ""
+        if p.link_group is None:
+            p.link_group = max((q.link_group or 0 for q in self.panels.values()), default=0) + 1
+        everything = " ".join(SYNC)
+        p.sync = everything
+        return Panel([l.copy() for l in p.lines], p.selected, source=source,
+                     operation=operation, link_group=p.link_group, sync=everything)
 
     def new_derived_panel(self, operation):
         """Add a row below the grid, with the selected panel's FFT or derivative under it."""
@@ -1375,15 +1380,15 @@ class Plotter(tk.Tk):
         if target == source:
             self._say(f"Click a different panel for the {self._kind(operation)}.", error=True)
             return
-        if old.source == source:  # already derived from it: just change what it shows
+        if old.derived and old.source == source:  # derived from it: change what it shows
             if old.operation != operation:
                 clear_ranges(old)  # in the old operation's units
                 old.title = old.x_label = old.y_label = ""
                 old.operation = operation
         else:
             dependents = [c for c, p in self.panels.items() if p.source == target]
-            if (old.source is None and any(l.shown for l in old.lines)) or dependents:
-                also = (", and the panels derived from it will be unlinked"
+            if (not old.derived and any(l.shown for l in old.lines)) or dependents:
+                also = (", and the panels derived from it will stop following it"
                         if dependents else "")
                 if not messagebox.askyesno(
                         "Replace panel?",
@@ -1391,8 +1396,8 @@ class Plotter(tk.Tk):
                         f"{self._kind(operation)} of panel {self._number(source)}{also}?",
                         parent=self):
                     return
-            for c in dependents:
-                self._unlink(self.panels[c])
+            for c in dependents:  # derived from what's replaced: they keep their lines
+                self.panels[c].source = None
             self.panels[target] = self._derived(source, operation)
         self.selected = target
         self._build_axes()
@@ -1401,7 +1406,7 @@ class Plotter(tk.Tk):
     def apply_fft(self):
         """Copy the FFT box into the selected FFT panel and redraw it."""
         p = self.panel
-        if p.source is None or p.operation != "fft":
+        if p.operation != "fft":
             return
         p.window = next(k for k, v in spectrum.WINDOWS.items() if v == self.fft_window.get())
         p.pad = int(self.fft_pad.get())
@@ -1416,7 +1421,7 @@ class Plotter(tk.Tk):
         """Copy the Derivative box into the selected derivative panel and redraw it.
         On a data panel the order only sets which derivative the buttons make."""
         p = self.panel
-        if p.source is None or p.operation == "fft":
+        if not p.derived or p.operation == "fft":
             return
         if self.derivative_order.get() != p.operation:
             clear_ranges(p, "y")  # dy/dx and d2y/dx2 are in different units
@@ -1428,10 +1433,14 @@ class Plotter(tk.Tk):
             pass
         self._redraw_selected(keep="x")
 
-    def unlink(self):
-        """Make the selected derived panel an ordinary panel with copies of the lines."""
-        if self.panel.source is not None:
-            self._unlink(self.panel)
+    def back_to_data(self):
+        """Make the selected derived panel plot its lines themselves. It stays in
+        its link group, as a linked data panel."""
+        p = self.panel
+        if p.derived:
+            p.operation, p.source = "", None
+            clear_ranges(p)  # in frequency or dy/dx; it's back to plotting the data
+            p.title = p.x_label = p.y_label = ""
             self._build_axes()
             self._load_controls()
 
@@ -1511,16 +1520,11 @@ class Plotter(tk.Tk):
                 if c != cell and self.panels[c].link_group == group]
 
     def _tied(self, cell):
-        """Every panel a change to `cell`'s lines shows in: the panels linked to it
-        and the derived or data panels locked to each, data panels first."""
-        tied = []
-        for c in [cell, *self._link_partners(cell)]:
-            tied += [t for t in self._linked(c) if t not in tied]
-        return sorted(tied, key=lambda c: self.panels[c].source is not None)
+        """Every panel a change to `cell`'s lines shows in: it and those linked to it."""
+        return [cell, *self._link_partners(cell)]
 
     def _group_lists(self, cell):
-        """The distinct lists of lines in `cell`'s linked group, `cell`'s first
-        (a derived panel shares its data panel's list)."""
+        """The lists of lines in `cell`'s linked group, `cell`'s first."""
         lists = []
         for c in [cell, *self._link_partners(cell)]:
             if not any(self.panels[c].lines is lines for lines in lists):
@@ -1528,31 +1532,24 @@ class Plotter(tk.Tk):
         return lists
 
     def _clear_ranges(self, lines, axes):
-        """Clear typed ranges on every panel drawing `lines` (a data panel and its
-        derived panels), when what's plotted on those axes changes."""
+        """Clear typed ranges on the panel drawing `lines`, when what's plotted on
+        those axes changes."""
         for p in self.panels.values():
             if p.lines is lines:
                 clear_ranges(p, axes)
 
-    def _sync_panel(self, cell):
-        """The panel whose `sync` applies to `cell`'s lines: a derived panel shares
-        its data panel's lines, so it uses that panel's."""
-        p = self.panels[cell]
-        return self.panels[p.source] if p.source is not None else p
-
     def _sync_inputs(self, cell):
         """Copy `cell`'s lines' settings to the linked panels' lines, line by
         line: each SYNC key that both panels share."""
-        source, *others = self._group_lists(cell)
-        if self._sync_panel(cell).frozen:
+        me = self.panels[cell]
+        if me.frozen:
             return
-        shares = self._sync_panel(cell).synced
-        for lines in others:
-            owner = next(p for p in self.panels.values() if p.lines is lines and p.source is None)
-            if owner.frozen:
+        for other in (self.panels[c] for c in self._link_partners(cell)):
+            if other.frozen:
                 continue
-            keys = [k for k in SYNC if k in shares & owner.synced]
-            for mine, theirs in zip(lines, source):
+            lines = other.lines
+            keys = [k for k in SYNC if k in me.synced & other.synced]
+            for mine, theirs in zip(lines, me.lines):
                 old_x, old_y = (mine.x, mine.x_fn), (mine.y, mine.y_fn, mine.background)
                 for key in keys:
                     for attr in SYNC[key]:
@@ -1572,7 +1569,7 @@ class Plotter(tk.Tk):
         """Freeze or unfreeze the selected panel's link. Frozen, it stays in its
         group (lines are still added and removed in step) but no settings cross
         either way; unfreezing sends its synced settings to the others."""
-        p = self._sync_panel(self.selected)
+        p = self.panels[self.selected]
         p.frozen = not p.frozen
         self._sync_inputs(self.selected)  # does nothing if it was just frozen
         self._redraw_selected("x", "x")
@@ -1580,18 +1577,24 @@ class Plotter(tk.Tk):
     def set_sync(self, key):
         """Tick or untick `key` in the selected panel's sync. Ticking it sends
         the selected panel's setting to the others that share it, as an edit would."""
-        p = self._sync_panel(self.selected)
+        p = self.panels[self.selected]
         synced = p.synced | {key} if self.sync_vars[key].get() else p.synced - {key}
         p.sync = " ".join(k for k in SYNC if k in synced)
         self._sync_inputs(self.selected)
         self._redraw_selected("x", "x")
 
     def _tidy_link_groups(self):
-        """Drop groups left with one panel (after an unlink or a smaller layout)."""
+        """Drop groups left with one panel (after an unlink or a smaller layout),
+        and forget a derived panel's source once it no longer follows it."""
         for group in self._link_groups():
             if len(group) == 1:
                 self.panels[group[0]].link_group = None
-                self._sync_panel(group[0]).frozen = False  # nothing left to freeze against
+                self.panels[group[0]].frozen = False  # nothing left to freeze against
+        for p in self.panels.values():
+            source = self.panels.get(p.source)
+            if p.source is not None and (source is None or p.link_group is None
+                                         or source.link_group != p.link_group):
+                p.source = None
 
     def _numbers(self, cells):
         """'2, 3 and 5' for those panels."""
@@ -1651,7 +1654,7 @@ class Plotter(tk.Tk):
         self.stop_picking()
         if self.panel.link_group is not None:
             self.panel.link_group = None
-            self._sync_panel(self.selected).frozen = False
+            self.panels[self.selected].frozen = False
             self._build_axes()
             self._load_controls()
 
@@ -1661,7 +1664,7 @@ class Plotter(tk.Tk):
         """Drag across the selected panel to set the selected line's fit range."""
         self.stop_picking()
         ax = self.axes[self.selected]
-        if self.panel.source is not None:
+        if self.panel.derived:
             self._say(f"Pick the fit range on the data panel, not its "
                       f"{self._kind(self.panel.operation)}.", error=True)
             return
@@ -1744,6 +1747,7 @@ class Plotter(tk.Tk):
 
         With `merge`, a change straight after another merging one (the colour
         picker, which calls this on every drag step) extends that step."""
+        self._prune_cache()
         if self.restoring:
             return
         now = session.dump(self.panels, self.rows, self.cols)
@@ -1792,7 +1796,7 @@ class Plotter(tk.Tk):
             self.selected = selected
         elif self.selected not in panels:
             self.selected = (0, 0)
-        self.cache.clear()  # keyed on id(Line); the old lines are gone
+        self.cache.clear()
         self._build_axes()
         self._load_controls()
 
@@ -1938,7 +1942,7 @@ class Plotter(tk.Tk):
         tail = f"_{background.file_part(*fitted)}" if fitted else ""
         tail += f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
         corner = self.panels[0, 0]
-        tail += f"_{corner.operation}" if corner.source else ""  # _fft, _d1 or _d2
+        tail += f"_{corner.operation}" if corner.derived else ""  # _fft, _d1 or _d2
         return f"{describe(run).replace(' ', '_')}_{y}_vs_{x}{tail}.png"
 
     def _update_filename(self):
