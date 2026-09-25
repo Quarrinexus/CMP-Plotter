@@ -61,6 +61,8 @@ class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CMP Plotter")
+        # clam looks the same on every platform; set before anything reads a style.
+        ttk.Style().theme_use("clam")
         # Starts maximised. This is the size it returns to when un-maximised:
         # room for the controls with a section or two open, screen allowing.
         self.geometry(f"1150x{min(820, self.winfo_screenheight() - 80)}")
@@ -145,6 +147,8 @@ class Plotter(tk.Tk):
         self.swap_icon = swap_icon()
         ttk.Button(axes, image=self.swap_icon, command=self.swap).pack(
             side=tk.LEFT, padx=(6, 0))
+        # Smoothing's toggle adds the 10 px below.
+        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
         self._fft_box(controls)
@@ -881,8 +885,10 @@ class Plotter(tk.Tk):
         """Empty axes with a message in the middle, e.g. 'Pick a dataset'."""
         ax.text(0.5, 0.5, text, ha="center", va="center", wrap=True,
                 transform=ax.transAxes, color=colour, fontsize=size)
-        # tick_params, so clearing the axes restores the ticks with the rest.
-        ax.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
+        # No ticks rather than hidden ones: clearing the axes brings ticks back,
+        # but tick_params settings survive it and would hide them for good.
+        ax.set_xticks([])
+        ax.set_yticks([])
 
     def _frame(self, cell):
         """Orange frame on the selected panel, when there's more than one, and a
