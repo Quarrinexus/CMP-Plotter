@@ -8,8 +8,8 @@ from matplotlib.colors import hsv_to_rgb, rgb_to_hsv, to_hex, to_rgb
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from cmp_plotter import theme
-from cmp_plotter.model import LEGENDS, MARKERS, RANGES, STYLES
+from goose_plotter import theme
+from goose_plotter.model import LEGENDS, MARKERS, RANGES, STYLES
 
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels

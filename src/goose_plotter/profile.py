@@ -1,10 +1,17 @@
-"""A data folder's `cmp-plotter.json`: labels, units, sample colours, default axes, format."""
+"""A data folder's `goose-plotter.json`: labels, units, sample colours, default axes, format."""
 
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
-PROFILE_NAME = "cmp-plotter.json"
+PROFILE_NAME = "goose-plotter.json"
+OLD_NAME = "cmp-plotter.json"  # from when it was CMP Plotter; still read and updated
+
+
+def _path(data_dir):
+    """The folder's profile: the old name if only that one is there."""
+    new, old = Path(data_dir) / PROFILE_NAME, Path(data_dir) / OLD_NAME
+    return old if old.is_file() and not new.is_file() else new
 
 
 @dataclass
@@ -18,7 +25,7 @@ class Profile:
 
 
 def _read(data_dir):
-    path = Path(data_dir) / PROFILE_NAME
+    path = _path(data_dir)
     if not path.is_file():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -40,10 +47,10 @@ def load_profile(data_dir):
                 raise ValueError(f"'{key}' has the wrong type")
         profile = Profile(**{k: data[k] for k in kinds if k in data})
     except (OSError, ValueError) as err:  # json errors are ValueErrors
-        return Profile(), f"{PROFILE_NAME} ignored: {err}"
+        return Profile(), f"{_path(data_dir).name} ignored: {err}"
     if profile.format is not None and not _valid_format(profile.format):
         profile.format = None  # keep the rest of the profile
-        return profile, f"{PROFILE_NAME}: 'format' ignored, see README"
+        return profile, f"{_path(data_dir).name}: 'format' ignored, see README"
     return profile, ""
 
 
@@ -61,4 +68,4 @@ def save_format(data_dir, fmt):
         data.pop("format", None)
     else:
         data["format"] = fmt
-    (Path(data_dir) / PROFILE_NAME).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _path(data_dir).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

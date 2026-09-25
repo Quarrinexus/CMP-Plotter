@@ -1,6 +1,7 @@
-# CMP Plotter
+# GOOSE Plotter
 
-Interactive Tk window for plotting columns from delimited text data files
+GOOSE, the **G**raphical **O**scillation **O**bservation **S**oftware
+**E**nvironment: an interactive Tk window for plotting columns from delimited text data files
 (`.txt`, `.text`, `.csv`, `.tsv`, `.dat`). The preamble, header line and
 delimiter are detected automatically.
 
@@ -20,7 +21,7 @@ delimiter are detected automatically.
 3. Run it. The first run downloads Python 3.13 and the dependencies into
    `.venv`; later runs start straight away.
    ```bash
-   uv run cmp-plotter
+   uv run goose-plotter
    ```
 
 ### Windows
@@ -42,10 +43,10 @@ In PowerShell:
 3. Run it. As on Linux, the first run downloads Python 3.13 (Tk included)
    and the dependencies; later runs start straight away.
    ```powershell
-   uv run cmp-plotter
+   uv run goose-plotter
    ```
 
-Settings are kept in `C:\Users\<you>\.config\cmp-plotter\settings.json`.
+Settings are kept in `C:\Users\<you>\.config\goose-plotter\settings.json`.
 
 ### A command that works from any folder
 
@@ -55,7 +56,7 @@ On any system, instead of `uv run` from the project folder:
 uv tool install .
 ```
 
-`uv tool uninstall cmp-plotter` removes it. If the `cmp-plotter` command
+`uv tool uninstall goose-plotter` removes it. If the `goose-plotter` command
 isn't found afterwards, run `uv tool update-shell` and open a new terminal.
 
 ## Update
@@ -69,7 +70,7 @@ git pull
 If you downloaded the ZIP instead, download it again and extract it over the
 old folder (or somewhere new).
 
-With `uv run cmp-plotter` there's nothing more to do: the next run picks up
+With `uv run goose-plotter` there's nothing more to do: the next run picks up
 the new code, and any new dependencies, by itself. If you installed the
 command with `uv tool install .`, reinstall it from the project folder:
 
@@ -77,9 +78,14 @@ command with `uv tool install .`, reinstall it from the project folder:
 uv tool install --reinstall .
 ```
 
-Your settings (`~/.config/cmp-plotter/settings.json`) and each data folder's
-`cmp-plotter.json` profile live outside the project folder, so updating
+Your settings (`~/.config/goose-plotter/settings.json`) and each data folder's
+`goose-plotter.json` profile live outside the project folder, so updating
 keeps them.
+
+GOOSE Plotter used to be CMP Plotter. It still reads the old
+`~/.config/cmp-plotter/settings.json` until it saves settings of its own, and
+a data folder's `cmp-plotter.json` profile if there's no `goose-plotter.json`
+beside it; sessions saved under the old name open too.
 
 ## Use
 
@@ -91,7 +97,7 @@ file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
 
 - **Data / Output folder** (Files tab): choose with Browse...; both are
-  remembered in `~/.config/cmp-plotter/settings.json` (see Windows above).
+  remembered in `~/.config/goose-plotter/settings.json` (see Windows above).
 - **Data format...** (Files tab): set the delimiter, column-name line and
   first data line by hand, with a preview. Opens by itself when a file's layout
   can't be detected. Saved for the whole data folder in its profile.
@@ -203,9 +209,9 @@ the plot to get out of it.
 
 ## Profiles
 
-A `cmp-plotter.json` in the data folder tells the plotter about that folder's
+A `goose-plotter.json` in the data folder tells the plotter about that folder's
 columns. Everything in it is optional; without one, columns show under their
-raw names. See [examples/cmp-plotter.json](examples/cmp-plotter.json).
+raw names. See [examples/goose-plotter.json](examples/goose-plotter.json).
 
 ```json
 {

@@ -5,11 +5,11 @@ from dataclasses import dataclass, field, replace
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from cmp_plotter.axis_functions import file_part
-from cmp_plotter.columns import sample_of
-from cmp_plotter.datasets import describe
-from cmp_plotter.background import describe as describe_background
-from cmp_plotter.smoothing import describe as describe_smoothing
+from goose_plotter.axis_functions import file_part
+from goose_plotter.columns import sample_of
+from goose_plotter.datasets import describe
+from goose_plotter.background import describe as describe_background
+from goose_plotter.smoothing import describe as describe_smoothing
 
 # What linked panels can share, line by line: a panel's `sync` names the
 # keys it shares, and a key syncs between two panels that both name it.

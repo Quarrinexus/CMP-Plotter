@@ -1,7 +1,7 @@
 [project]
-name = "cmp-plotter"
+name = "goose-plotter"
 version = "0.3.0"
-description = "A vibe coded tool for creating Condensed Matter Physics plots"
+description = "GOOSE, the Graphical Oscillation Observation Software Environment: a vibe coded tool for creating Condensed Matter Physics plots"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cmp-plotter = "cmp_plotter:main"
+goose-plotter = "goose_plotter:main"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]

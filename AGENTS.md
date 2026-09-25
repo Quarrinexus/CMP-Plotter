@@ -1,13 +1,14 @@
-# Notes for agents working on CMP Plotter
+# Notes for agents working on GOOSE Plotter
 
-A Tk + matplotlib window for plotting columns of capacitance-bridge (CMP)
-data files against each other. README.md describes it from the user's side;
+GOOSE (Graphical Oscillation Observation Software Environment), formerly
+CMP Plotter: a Tk + matplotlib window for plotting columns of
+capacitance-bridge (CMP) data files against each other. README.md describes it from the user's side;
 this file is what isn't obvious from the code.
 
 ## Running
 
 ```bash
-uv run cmp-plotter
+uv run goose-plotter
 ```
 
 Python 3.13, managed by uv; dependencies are in `pyproject.toml`. There's no
@@ -16,12 +17,14 @@ and by looking at a saved figure or a screenshot.
 
 No data ships with the repo. On the author's machine it sits inside a
 Huairou-CMP folder whose `Analysis/data` holds real runs
-(`Cambridge_Sep_26.00N.text`) with a `cmp-plotter.json` profile; run 005
-(a 28 T → 1 T sweep, 13k rows) and run 003 (24k rows, ~10k of them parked
-at 28 T) are the useful ones, and `Analysis/squiggle-finder.py` is the
-offline oscillation analysis the Smoothing, Background and FFT features
-mirror. If that folder isn't around this repo, use whatever data folder
-`~/.config/cmp-plotter/settings.json` points at, or ask for some.
+(`Cambridge_Sep_26.00N.text`) with a `cmp-plotter.json` profile (the old
+name, which `profile.py` still reads); run 005 (a 28 T → 1 T sweep, 13k
+rows) and run 003 (24k rows, ~10k of them parked at 28 T) are the useful
+ones, and `Analysis/squiggle-finder.py` is the offline oscillation analysis
+the Smoothing, Background and FFT features mirror. If that folder isn't
+around this repo, use whatever data folder
+`~/.config/goose-plotter/settings.json` (or the old `cmp-plotter` one)
+points at, or ask for some.
 
 ## Layout
 
@@ -183,9 +186,9 @@ Build the window, patch the popups so they can't block, drive the controls,
 then read the state:
 
 ```python
-from cmp_plotter import plotter as P
+from goose_plotter import plotter as P
 P.messagebox.askyesno = lambda *a, **k: True  # the only popup questions left
-app = P.Plotter()                      # uses ~/.config/cmp-plotter/settings.json
+app = P.Plotter()                      # uses ~/.config/goose-plotter/settings.json
 app.run.set(next(n for n in app.datasets if "005" in n)); app.apply_controls()
 app.smooth.set("Savitzky-Golay"); app.apply_controls()
 print(app.panel.line.shown, app.error_label["text"])

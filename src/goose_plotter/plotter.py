@@ -12,17 +12,17 @@ from matplotlib.widgets import SpanSelector
 import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
-from cmp_plotter.axis_functions import apply_function, is_identity, rename
-from cmp_plotter import background, session, smoothing, spectrum, theme
-from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import (LEGENDS, RANGES, SYNC, X_UNITS, Panel, clear_ranges,
+from goose_plotter.axis_functions import apply_function, is_identity, rename
+from goose_plotter import background, session, smoothing, spectrum, theme
+from goose_plotter.columns import label, lookup, with_unit, without_unit
+from goose_plotter.model import (LEGENDS, RANGES, SYNC, X_UNITS, Panel, clear_ranges,
                                legend_labels, line_colours, shared)
-from cmp_plotter.profile import load_profile, save_format
-from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
+from goose_plotter.profile import load_profile, save_format
+from goose_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
-from cmp_plotter.format_dialog import FormatDialog
-from cmp_plotter.settings import load_settings, save_settings
-from cmp_plotter.widgets import (MAX_GRID, SELECTED, AxesPopup, LayoutPicker, LineStylePopup,
+from goose_plotter.format_dialog import FormatDialog
+from goose_plotter.settings import load_settings, save_settings
+from goose_plotter.widgets import (MAX_GRID, SELECTED, AxesPopup, LayoutPicker, LineStylePopup,
                                  OverwriteDialog, line_sample)
 
 PARTNER = "#f0c987"  # frame around the panel locked to the selected one
@@ -90,7 +90,10 @@ def axes_icon(colour=theme.MUTED):
 class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CMP Plotter")
+        self.title("GOOSE Plotter")
+        # The pixel goose; kept on self, as Tk drops an image nothing refers to.
+        self.icon = tk.PhotoImage(file=Path(__file__).with_name("icon.png"))
+        self.iconphoto(True, self.icon)
         theme.apply(self)  # before any widget is made or reads a style
         # Starts maximised. This is the size it returns to when un-maximised:
         # room for the controls with a section or two open, screen allowing.
@@ -1603,10 +1606,10 @@ class Plotter(tk.Tk):
                 parent=self, title="Save session", defaultextension=".json",
                 initialdir=self.settings.get("output_dir") or Path.home(),
                 initialfile=f"{stem}-session.json",
-                filetypes=[("CMP Plotter session", "*.json"), ("All files", "*")])
+                filetypes=[("GOOSE Plotter session", "*.json"), ("All files", "*")])
             if not path:  # cancelled; the file dialog asked about replacing already
                 return
-        data = {"cmp_plotter_session": session.VERSION, "data_dir": self.data_dir,
+        data = {session.KEY: session.VERSION, "data_dir": self.data_dir,
                 "selected": session.cell_key(self.selected),
                 **session.dump(self.panels, self.rows, self.cols)}
         if self.filename.get().strip() != self.auto_name:  # a name the user typed
@@ -1625,15 +1628,17 @@ class Plotter(tk.Tk):
             path = filedialog.askopenfilename(
                 parent=self, title="Open session",
                 initialdir=self.settings.get("output_dir") or Path.home(),
-                filetypes=[("CMP Plotter session", "*.json"), ("All files", "*")])
+                filetypes=[("GOOSE Plotter session", "*.json"), ("All files", "*")])
             if not path:
                 return
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or "cmp_plotter_session" not in data:
-                raise ValueError("it isn't a CMP Plotter session")
-            if not isinstance(data["cmp_plotter_session"], int) \
-                    or data["cmp_plotter_session"] > session.VERSION:
+            # Sessions from before the rename have the old key.
+            key = next((k for k in (session.KEY, session.OLD_KEY)
+                        if isinstance(data, dict) and k in data), None)
+            if key is None:
+                raise ValueError("it isn't a GOOSE Plotter session")
+            if not isinstance(data[key], int) or data[key] > session.VERSION:
                 raise ValueError("it's from a newer version of the plotter")
             session.load(data)  # check it all before changing anything
         except (OSError, ValueError) as err:
