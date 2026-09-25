@@ -233,30 +233,17 @@ class Plotter(tk.Tk):
         self._bind_keys()
 
         # The bottom of the column, below the scrolling part: the status, the
-        # panel buttons, then the name to save under beside Save figure, so the
-        # buttons stay at the very bottom. Each row spans the column.
+        # name to save under, then the buttons in a square (panels above,
+        # saving below), so they stay at the very bottom. Each row spans the column.
         self.status = ttk.Label(save, wraplength=230)
         self.status.pack(anchor=tk.W, pady=(12, 0))
-        buttons = ttk.Frame(save)
-        buttons.pack(fill=tk.X, pady=(8, 0))
-        buttons.columnconfigure((0, 1), weight=1, uniform="panel")
-        ttk.Button(buttons, text="Layout...", command=self.choose_layout).grid(
-            row=0, column=0, sticky="ew", padx=(0, 3))
-        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
-        self.delete_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
-        row = ttk.Frame(save)
-        row.pack(fill=tk.X, pady=(10, 2))
-        ttk.Label(row, text="Save as").pack(side=tk.LEFT, anchor=tk.S)
-        ttk.Button(row, text="Options...", command=self.open_save_options).pack(side=tk.RIGHT)
-        row = ttk.Frame(save)
-        row.pack(fill=tk.X)
+        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(8, 2))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
-        ttk.Button(row, text="Save figure", command=self.save).pack(side=tk.RIGHT, padx=(6, 0))
-        # Width 1: the box takes what the button leaves, so it never widens the
-        # column (a long name scrolls in it).
-        name_box = ttk.Entry(row, textvariable=self.filename, width=1)
-        name_box.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=2)
+        # Width 1: the box takes the column's width without widening it (a long
+        # name scrolls in it).
+        name_box = ttk.Entry(save, textvariable=self.filename, width=1)
+        name_box.pack(fill=tk.X, ipady=2)
         for key in ("<Return>", "<KP_Enter>"):
             name_box.bind(key, lambda _: self.save())
         buttons = ttk.Frame(save)

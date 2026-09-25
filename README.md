@@ -216,7 +216,7 @@ stay until it's done or cancelled.
   file of that name is already there, it asks before replacing it. Ticking
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
-- **Options...** (beside Save as): how Save figure writes the file. **Size**
+- **Options...** (beside Save figure): how Save figure writes the file. **Size**
   is **As on screen** (the default) or **Custom**, a **Width** and
   **Height** in inches or cm, e.g. a journal's column width; text keeps its
   point size, so a small figure has relatively larger labels. **DPI** (200
