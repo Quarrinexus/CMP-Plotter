@@ -122,6 +122,10 @@ each panel's own. So:
   `SYNC`'s "x" before the keys holding x-unit settings: that clearing runs
   after x is copied. Add and remove lines through `add_line` /
   `remove_line`, which do it in every list in `_group_lists`.
+- `Panel.frozen` (on the `_sync_panel`, like `sync`) makes `_sync_inputs`
+  skip it both ways; `freeze` sends its settings on unfreezing. Lines are
+  still added and removed across frozen panels, so pairs stay matched.
+  Leaving a group (`unlink_panel`, `_tidy_link_groups`) unfreezes it.
 - `_tied(cell)` is every panel a change shows in: the group plus each
   member's FFT or data panel. `_redraw_selected` redraws those.
 - A group's FFT panel shares one member's list, so `_group_lists`

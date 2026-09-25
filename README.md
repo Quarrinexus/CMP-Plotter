@@ -181,14 +181,19 @@ in red under the Y axis until it's fixed or another line is selected.
   ticks. Axis ranges and zoom stay each panel's own. Any number of panels
   can join (linking two groups merges them); the selected panel's linked
   partners get a dashed frame. **Unlink panel** takes the selected one out,
-  keeping what it plots.
+  keeping what it plots. **Freeze** pauses the selected panel's link without
+  leaving the group: nothing it syncs crosses to or from it (adding or
+  removing a line still happens in all of them, so lines stay paired), and
+  the rest of the group keeps syncing among themselves. **Unfreeze** sends
+  its synced settings to the others, so what you changed while it was
+  frozen is carried across.
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it.
 - **Layout...**: hover to size the grid, click to apply. Click a panel to select it.
-- **Delete panel** (beside Layout...): deletes the selected panel. The
+- **Delete panel** (beside Layout..., at the bottom of the column): deletes the selected panel. The
   panels after it, across then down, move back one place, and the grid loses
   the row or column that leaves empty (a 3 x 1 stack becomes 2 x 1); in a
   grid of both rows and columns the last cell gets an empty panel instead.

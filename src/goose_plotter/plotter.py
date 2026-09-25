@@ -230,25 +230,30 @@ class Plotter(tk.Tk):
         self.bind("<Escape>", lambda _: self.stop_picking())
         self._bind_keys()
 
-        # Saving sits at the bottom of the column, below the scrolling part,
-        # with the status above it so the buttons stay at the very bottom.
+        # The bottom of the column, below the scrolling part: the status, the
+        # panel buttons, then the name to save under beside Save figure, so the
+        # buttons stay at the very bottom. Each row spans the column.
         self.status = ttk.Label(save, wraplength=230)
         self.status.pack(anchor=tk.W, pady=(12, 0))
-        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(8, 2))
+        buttons = ttk.Frame(save)
+        buttons.pack(fill=tk.X, pady=(8, 0))
+        buttons.columnconfigure((0, 1), weight=1, uniform="panel")
+        ttk.Button(buttons, text="Layout...", command=self.choose_layout).grid(
+            row=0, column=0, sticky="ew", padx=(0, 3))
+        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
+        self.delete_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(10, 2))
+        row = ttk.Frame(save)
+        row.pack(fill=tk.X)
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
-        name_box = ttk.Entry(save, textvariable=self.filename, width=26)
-        name_box.pack(anchor=tk.W)
+        ttk.Button(row, text="Save figure", command=self.save).pack(side=tk.RIGHT, padx=(6, 0))
+        # Width 1: the box takes what the button leaves, so it never widens the
+        # column (a long name scrolls in it).
+        name_box = ttk.Entry(row, textvariable=self.filename, width=1)
+        name_box.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=2)
         for key in ("<Return>", "<KP_Enter>"):
             name_box.bind(key, lambda _: self.save())
-        # Two rows, as three buttons in one would widen the column: the panels,
-        # then saving.
-        buttons = ttk.Frame(save)
-        buttons.pack(anchor=tk.W, pady=(8, 0))
-        ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
-        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
-        self.delete_button.pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(save, text="Save figure", command=self.save).pack(anchor=tk.W, pady=(6, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
         plot = ttk.Frame(self)
@@ -693,6 +698,10 @@ class Plotter(tk.Tk):
         ttk.Button(row, text="Link to panel...", command=self.link_panels).pack(side=tk.LEFT)
         unlink = ttk.Button(row, text="Unlink panel", command=self.unlink_panel)
         unlink.pack(side=tk.LEFT, padx=(6, 0))
+        freeze = ttk.Button(body, command=self.freeze)
+        freeze.pack(anchor=tk.W, pady=(4, 0))
+        freeze_hint = ttk.Label(body, foreground=theme.HINT)
+        freeze_hint.pack(anchor=tk.W)
         # What this panel shares with the group, in two columns: the data
         # input on the left, how it's processed and drawn on the right.
         ttk.Label(body, text="Sync").pack(anchor=tk.W, pady=(12, 2))
@@ -714,9 +723,15 @@ class Plotter(tk.Tk):
 
         def refresh():
             others = self._link_partners(self.selected)
+            frozen = self._sync_panel(self.selected).frozen
             status["text"] = (f"Linked to panel{'s' if len(others) > 1 else ''} "
-                              f"{self._numbers(others)}" if others else "Not linked")
+                              f"{self._numbers(others)}{', frozen' if frozen else ''}"
+                              if others else "Not linked")
             unlink.state(["!disabled" if others else "disabled"])
+            freeze["text"] = "Unfreeze" if frozen else "Freeze"
+            freeze.state(["!disabled" if others else "disabled"])
+            freeze_hint["text"] = ("sends its settings to the others" if frozen
+                                   else "pause syncing, keep the link")
             synced = self._sync_panel(self.selected).synced
             for key, var in self.sync_vars.items():
                 var.set(key in synced)
@@ -1528,9 +1543,13 @@ class Plotter(tk.Tk):
         """Copy `cell`'s lines' settings to the linked panels' lines, line by
         line: each SYNC key that both panels share."""
         source, *others = self._group_lists(cell)
+        if self._sync_panel(cell).frozen:
+            return
         shares = self._sync_panel(cell).synced
         for lines in others:
             owner = next(p for p in self.panels.values() if p.lines is lines and p.source is None)
+            if owner.frozen:
+                continue
             keys = [k for k in SYNC if k in shares & owner.synced]
             for mine, theirs in zip(lines, source):
                 old_x, old_y = (mine.x, mine.x_fn), (mine.y, mine.y_fn, mine.background)
@@ -1548,6 +1567,15 @@ class Plotter(tk.Tk):
                 if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
                     self._clear_ranges(lines, "y")
 
+    def freeze(self):
+        """Freeze or unfreeze the selected panel's link. Frozen, it stays in its
+        group (lines are still added and removed in step) but no settings cross
+        either way; unfreezing sends its synced settings to the others."""
+        p = self._sync_panel(self.selected)
+        p.frozen = not p.frozen
+        self._sync_inputs(self.selected)  # does nothing if it was just frozen
+        self._redraw_selected("x", "x")
+
     def set_sync(self, key):
         """Tick or untick `key` in the selected panel's sync. Ticking it sends
         the selected panel's setting to the others that share it, as an edit would."""
@@ -1562,6 +1590,7 @@ class Plotter(tk.Tk):
         for group in self._link_groups():
             if len(group) == 1:
                 self.panels[group[0]].link_group = None
+                self._sync_panel(group[0]).frozen = False  # nothing left to freeze against
 
     def _numbers(self, cells):
         """'2, 3 and 5' for those panels."""
@@ -1621,6 +1650,7 @@ class Plotter(tk.Tk):
         self.stop_picking()
         if self.panel.link_group is not None:
             self.panel.link_group = None
+            self._sync_panel(self.selected).frozen = False
             self._build_axes()
             self._load_controls()
 

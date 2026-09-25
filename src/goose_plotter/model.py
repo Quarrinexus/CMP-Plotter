@@ -112,6 +112,7 @@ class Panel:
     derivative_window: int = 51  # derivative panels: grid points per fit, odd
     link_group: int | None = None  # panels with the same number plot the same data
     sync: str = SYNC_DEFAULT  # the SYNC keys it shares with its group, space-separated
+    frozen: bool = False  # in its group, but its settings neither sent nor taken for now
     # Typed axis ranges, in the plotted units; None: that end is automatic.
     x_min: float | None = None
     x_max: float | None = None
