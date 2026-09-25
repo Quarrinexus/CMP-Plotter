@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from goose_plotter import theme
-from goose_plotter.model import LEGENDS, MARKERS, RANGES, STYLES
+from goose_plotter.model import AUTO_MARKER_SIZE, LEGENDS, MARKERS, RANGES, STYLES
 
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels
@@ -220,12 +220,13 @@ def line_sample(style, marker, colour, width=1.0, size=(44, 16)):
 
 
 class LineStylePopup(tk.Toplevel):
-    """Colour, line style, width, marker and legend name for the selected line,
+    """Colour, line style, width, marker and its size, and legend name for the selected line,
     in its own window. Changes apply as they're made: `on_colour('#rrggbb')`,
     `on_reset()` for the automatic colour, and `on_change(merge, **settings)`
-    for the rest, with `merge` true while the width slider is being dragged."""
+    for the rest, with `merge` true while a slider is being dragged."""
 
     WIDTHS = (0.2, 5.0)
+    SIZES = (1.0, 12.0)
 
     def __init__(self, parent, on_change, on_colour, on_reset):
         super().__init__(parent)
@@ -237,6 +238,7 @@ class LineStylePopup(tk.Toplevel):
         self.images = {}
         self.style, self.marker = tk.StringVar(), tk.StringVar()
         self.width, self.name = tk.DoubleVar(), tk.StringVar()
+        self.size = tk.DoubleVar()
         body = ttk.Frame(self, padding=12)
         body.pack(fill=tk.BOTH, expand=True)
 
@@ -268,7 +270,7 @@ class LineStylePopup(tk.Toplevel):
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, fill=tk.X, pady=(2, 10))
         self.scale = ttk.Scale(row, from_=self.WIDTHS[0], to=self.WIDTHS[1], length=220,
-                               variable=self.width, command=self._slide)
+                               variable=self.width, command=lambda _: self._slide("width"))
         self.scale.pack(side=tk.LEFT)
         self.scale.bind("<ButtonRelease-1>", lambda _: self._changed())  # the drag ends
         self.width_label = ttk.Label(row, width=9)
@@ -278,7 +280,7 @@ class LineStylePopup(tk.Toplevel):
 
         ttk.Label(body, text="Marker", foreground=theme.MUTED).pack(anchor=tk.W)
         row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(2, 10))
+        row.pack(anchor=tk.W, pady=(2, 4))
         self.marker_buttons = {}
         for key in MARKERS:
             button = ttk.Radiobutton(row, variable=self.marker, value=key, style="Toolbutton",
@@ -286,6 +288,19 @@ class LineStylePopup(tk.Toplevel):
                                      command=lambda: self._changed(marker=self.marker.get()))
             button.pack(side=tk.LEFT, padx=(0, 4))
             self.marker_buttons[key] = button
+        # Its size, like Width: the slider's text says when it's the automatic one.
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, fill=tk.X, pady=(0, 10))
+        ttk.Label(row, text="Size", width=5).pack(side=tk.LEFT)
+        self.size_scale = ttk.Scale(row, from_=self.SIZES[0], to=self.SIZES[1], length=180,
+                                    variable=self.size, command=lambda _: self._slide("size"))
+        self.size_scale.pack(side=tk.LEFT)
+        self.size_scale.bind("<ButtonRelease-1>", lambda _: self._changed())
+        self.size_label = ttk.Label(row, width=9)
+        self.size_label.pack(side=tk.LEFT, padx=(8, 0))
+        self.size_auto = ttk.Button(row, text="Auto",
+                                    command=lambda: self._changed(marker_size=None))
+        self.size_auto.pack(side=tk.LEFT)
 
         ttk.Label(body, text="Name in the legend", foreground=theme.MUTED).pack(anchor=tk.W)
         entry = ttk.Entry(body, textvariable=self.name, width=40)
@@ -297,14 +312,13 @@ class LineStylePopup(tk.Toplevel):
         ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(10, 0))
         self.bind("<Escape>", lambda _: self.destroy())
 
-    def _width(self):
-        return round(self.width.get(), 1)
-
-    def _slide(self, _):
+    def _slide(self, which):
+        """A drag of the width or size slider; one undo step until it ends."""
         if self.loading:
             return
-        self.width_label["text"] = f"{self._width():g}"
-        self._changed(merge=True, width=self._width())
+        value = round((self.width if which == "width" else self.size).get(), 1)
+        (self.width_label if which == "width" else self.size_label)["text"] = f"{value:g}"
+        self._changed(merge=True, **{"width" if which == "width" else "marker_size": value})
 
     def _changed(self, merge=False, **settings):
         if not self.loading:
@@ -326,6 +340,12 @@ class LineStylePopup(tk.Toplevel):
             width = line.auto_width if line.width is None else line.width
             self.width.set(width)
             self.width_label["text"] = f"{width:g}" + (" (auto)" if line.width is None else "")
+            size = AUTO_MARKER_SIZE if line.marker_size is None else line.marker_size
+            self.size.set(size)
+            self.size_label["text"] = f"{size:g}" + (" (auto)" if line.marker_size is None else "")
+            # Only a line with markers has a size to set.
+            for widget in (self.size_scale, self.size_auto):
+                widget.state(["!disabled" if line.marker else "disabled"])
             self.name.set(line.label)
             # The lines alone and the markers alone, heavy enough to tell apart.
             for key, button in self.style_buttons.items():

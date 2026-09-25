@@ -16,9 +16,11 @@ from goose_plotter.smoothing import describe as describe_smoothing
 SYNC = {"run": ("run",), "x": ("x", "x_fn"), "y": ("y", "y_fn"), "colour": ("colour",),
         "smoothing": ("smooth", "window", "in_x", "span", "order"),
         "background": ("background", "degree", "fit_from", "fit_to"),
-        "style": ("style", "width", "marker")}
+        "style": ("style", "width", "marker", "marker_size")}
 SYNC_DEFAULT = "run x y colour"
 X_UNITS = ("span", "fit_from", "fit_to")  # settings in the plotted x
+
+AUTO_MARKER_SIZE = 3.0  # matplotlib's markersize, in points
 
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 
@@ -49,6 +51,7 @@ class Line:
     style: str = "auto"  # a key of STYLES
     width: float | None = None  # None: auto_width
     marker: str = ""  # a key of MARKERS
+    marker_size: float | None = None  # None: AUTO_MARKER_SIZE
     label: str = ""  # its name in the legend; "": the automatic one
     shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing, fitting) as last drawn
     error: str = ""  # why the last draw failed, if it did
@@ -68,7 +71,8 @@ class Line:
         kwargs = {"ls": "None" if style == "none" else style,
                   "lw": self.auto_width if self.width is None else self.width}
         if self.marker:
-            kwargs |= {"marker": self.marker, "ms": 3}
+            kwargs |= {"marker": self.marker,
+                       "ms": AUTO_MARKER_SIZE if self.marker_size is None else self.marker_size}
         return kwargs
 
     @property

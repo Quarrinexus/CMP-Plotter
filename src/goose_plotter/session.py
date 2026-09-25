@@ -20,7 +20,7 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.
-POSITIVE = {Line: {"width", "window", "span"}, Panel: {"f_max"}}
+POSITIVE = {Line: {"width", "marker_size", "window", "span"}, Panel: {"f_max"}}
 
 
 def cell_key(cell):

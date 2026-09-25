@@ -62,11 +62,12 @@ Keep that order. Things that depend on it:
   `(run, x, x_fn, y, y_fn, smoothing, fitting)`. `parts()`, `legend_labels`,
   `_default_name` and the zoom logic in `apply_controls` all index into it, so
   a new per-line setting means updating each of them.
-- **Style isn't in `shown`**, on purpose: `Line.style`, `width`, `marker`
-  and `label` go through `Line.plot_style()` and the legend only, so they
+- **Style isn't in `shown`**, on purpose: `Line.style`, `width`, `marker`,
+  `marker_size` and `label` go through `Line.plot_style()` and the legend only, so they
   don't touch the `_line_data` cache, the filename or the zoom logic. A
-  width of None means `auto_width` (heavier for a shown fit); `apply_controls`
-  only stores the box's number if it differs from the auto one it showed.
+  width of None means `auto_width` (heavier for a shown fit), and a
+  `marker_size` of None `AUTO_MARKER_SIZE`; `apply_controls` only stores the
+  box's number if it differs from the auto one it showed.
 - **Settings in x units** (`Line.span`, `fit_from`, `fit_to`) are in the
   *plotted* x, after its function. They're cleared whenever x or its function
   changes, or on ⇅, since a value in T means nothing in 1/B.

@@ -121,7 +121,8 @@ in red under the Y axis until it's fixed or another line is selected.
   look, opens it. **Colour** (drag in the field and the brightness strip;
   **Automatic** goes back to the sample's colour or a free one), **Line**
   (Auto is solid, or dashed for a shown fit; None leaves only the markers),
-  **Width** (**Auto** undoes a set width), **Marker**, and **Name in the
+  **Width** (**Auto** undoes a set width), **Marker** with its **Size**
+  (for any marker but None; **Auto** is 3), and **Name in the
   legend**, also shown in the Lines list (blank: automatic; mathtext works;
   Enter applies). Everything else applies as you click, keeps the zoom, and
   follows whichever line is selected.
@@ -156,7 +157,7 @@ in red under the Y axis until it's fixed or another line is selected.
   all of them, and changing a synced setting does too. **Sync** chooses, per
   panel, what it shares: **Dataset**, **X axis** and **Y axis** (each with
   its Function box) and **Colour** are ticked to start with; **Smoothing**,
-  **Background** and **Line style** (line, width and marker) aren't. A
+  **Background** and **Line style** (line, width, marker and its size) aren't. A
   setting syncs between two panels only if both tick it, so e.g. one panel
   shows the raw data, a linked one the same data with the background
   subtracted, and another that smoothed; or untick Y axis to plot another
