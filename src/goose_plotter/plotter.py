@@ -16,7 +16,7 @@ from goose_plotter.axis_functions import apply_function, is_identity, rename
 from goose_plotter import background, derivative, session, smoothing, spectrum, theme
 from goose_plotter.columns import label, lookup, with_unit, without_unit
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC, X_UNITS,
-                               Panel, clear_ranges, legend_labels, line_colours, shared)
+                               Link, Panel, clear_ranges, legend_labels, line_colours, shared)
 from goose_plotter.profile import load_profile, save_format
 from goose_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -117,7 +117,9 @@ class Plotter(tk.Tk):
         self.save_popup = None
         self.picker = None  # the SpanSelector while a fit range is being dragged
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
-        self.link_pick = None  # cell while the user clicks a panel to link its data to
+        self.link_pick = None  # cell while the user clicks a panel to link it to
+        self.links = {}  # frozenset of two panel ids -> Link; see _link_partners
+        self.link_partner = None  # id of the panel whose link the Linking tab shows
         self.cache = {}  # _data_key -> (x, y and labels, span), see _line_data
         # One step of undo: the state before the last change, and after it.
         self.undo_state = self.last_state = None
@@ -724,25 +726,54 @@ class Plotter(tk.Tk):
         self.derivative_order.show = refresh
 
     def _link_box(self, parent):
-        """Linked data: panels that plot the same data. No toggle, as it has
-        the Linking tab to itself."""
+        """Links: which panels the selected one is linked to, a tab per link,
+        and the chosen link's settings. No toggle, as it has the Linking tab to itself."""
         body = ttk.Frame(parent)
         body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
-        status = ttk.Label(body, foreground=theme.MUTED, wraplength=230)
+        status = ttk.Label(body, foreground=theme.MUTED, wraplength=300)
         status.pack(anchor=tk.W, pady=(2, 0))
-        # Link, unlink and freeze (pause syncing, keeping the link), on a row.
-        row = ttk.Frame(body)
-        row.pack(fill=tk.X, pady=(4, 0))
-        row.columnconfigure((0, 1, 2), weight=1, uniform="link")
-        ttk.Button(row, text="Link...", width=1, command=self.link_panels).grid(
+
+        # A tab per link, in a strip that scrolls sideways if they don't fit.
+        details = ttk.Frame(body)
+        background = ttk.Style().lookup("TFrame", "background")
+        strip = tk.Canvas(details, height=1, width=1, highlightthickness=0, borderwidth=0,
+                          background=background)
+        strip.pack(fill=tk.X, pady=(8, 0))
+        tabs = ttk.Frame(strip)
+        strip.create_window(0, 0, window=tabs, anchor=tk.NW)
+        strip_scroll = ttk.Scrollbar(details, orient=tk.HORIZONTAL, command=strip.xview,
+                                     style="Side.Horizontal.TScrollbar")
+        ttk.Style().configure("Side.Horizontal.TScrollbar", arrowsize=10)
+        strip.configure(xscrollcommand=strip_scroll.set)
+
+        def fit_strip(_=None):
+            width, height = tabs.winfo_reqwidth(), tabs.winfo_reqheight()
+            strip.configure(height=height, scrollregion=(0, 0, width, height))
+            if width > strip.winfo_width() > 1:
+                if not strip_scroll.winfo_manager():
+                    strip_scroll.pack(fill=tk.X, after=strip, pady=(2, 0))
+            elif strip_scroll.winfo_manager():
+                strip_scroll.pack_forget()
+                strip.xview_moveto(0)
+        tabs.bind("<Configure>", fit_strip)
+        strip.bind("<Configure>", fit_strip)
+        self.link_var = tk.StringVar()
+
+        # Link to another panel; unlink or freeze (keep, sharing nothing for now)
+        # the chosen link.
+        buttons = ttk.Frame(body)
+        buttons.pack(fill=tk.X, pady=(6, 0))
+        buttons.columnconfigure((0, 1, 2), weight=1, uniform="link")
+        ttk.Button(buttons, text="Link...", width=1, command=self.link_panels).grid(
             row=0, column=0, sticky="ew")
-        unlink = ttk.Button(row, text="Unlink", width=1, command=self.unlink_panel)
+        unlink = ttk.Button(buttons, text="Unlink", width=1, command=self.unlink_panel)
         unlink.grid(row=0, column=1, sticky="ew", padx=6)
-        freeze = ttk.Button(row, width=1, command=self.freeze)
+        freeze = ttk.Button(buttons, text="Freeze", width=1, command=self.freeze)
         freeze.grid(row=0, column=2, sticky="ew")
-        # What this panel shares with the group, in pairs: x beside y, and so on.
-        ttk.Label(body, text="Sync").pack(anchor=tk.W, pady=(12, 2))
-        boxes = ttk.Frame(body)
+        # What the chosen link shares, in pairs: x beside y, and so on.
+        settings = ttk.Frame(body)
+        ttk.Label(settings, text="Sync").pack(anchor=tk.W, pady=(10, 2))
+        boxes = ttk.Frame(settings)
         boxes.pack(anchor=tk.W, fill=tk.X)
         self.sync_vars = {}
         names = {"run": "Dataset", "x": "X axis", "x_fn": "X function", "y": "Y axis",
@@ -756,21 +787,38 @@ class Plotter(tk.Tk):
             ttk.Checkbutton(boxes, text=names[key], variable=var,
                             command=lambda key=key: self.set_sync(key)).grid(
                 row=row, column=col, sticky=tk.W, padx=(0, 16), pady=1)
-        ttk.Label(body, text="syncs between panels that both tick it",
-                  foreground=theme.HINT).pack(anchor=tk.W, pady=(2, 0))
+        hint = ttk.Label(settings, foreground=theme.HINT)
+        hint.pack(anchor=tk.W, pady=(2, 0))
 
         def refresh():
-            others = self._link_partners(self.selected)
-            frozen = self.panels[self.selected].frozen
-            status["text"] = (f"Linked to panel{'s' if len(others) > 1 else ''} "
-                              f"{self._numbers(others)}{', frozen' if frozen else ''}"
-                              if others else "Not linked")
-            unlink.state(["!disabled" if others else "disabled"])
-            freeze["text"] = "Unfreeze" if frozen else "Freeze"
-            freeze.state(["!disabled" if others else "disabled"])
-            synced = self.panels[self.selected].synced
+            partners = self._link_partners(self.selected)
+            status["text"] = (f"Linked to panel{'s' if len(partners) > 1 else ''} "
+                              f"{self._numbers(partners)}" if partners else "Not linked")
+            chosen, link = self._chosen_link()
+            for button in (unlink, freeze):
+                button.state(["!disabled" if link else "disabled"])
+            if link is None:
+                details.pack_forget()
+                settings.pack_forget()
+                freeze["text"] = "Freeze"
+                return
+            details.pack(fill=tk.X, after=status)
+            settings.pack(fill=tk.X, after=buttons)
+            for button in tabs.winfo_children():
+                button.destroy()
+            for c in partners:
+                frozen = self.links[self._pair(self.selected, c)].frozen
+                ttk.Radiobutton(tabs, text=f"Panel {self._number(c)}{' (frozen)' if frozen else ''}",
+                                value=self.panels[c].id, variable=self.link_var,
+                                style="Tab.Toolbutton",
+                                command=lambda: self.choose_link(self.link_var.get())).pack(
+                    side=tk.LEFT, padx=(0, 2))
+            self.link_var.set(self.link_partner)
+            freeze["text"] = "Unfreeze" if link.frozen else "Freeze"
             for key, var in self.sync_vars.items():
-                var.set(key in synced)
+                var.set(key in link.synced)
+            hint["text"] = (f"the link between panels {self._number(self.selected)} "
+                            f"and {self._number(chosen)}")
         self.link_status = refresh
 
     def _folder_row(self, parent, label, key):
@@ -1076,7 +1124,7 @@ class Plotter(tk.Tk):
         self.fig.clear()
         grid = self.fig.subplots(self.rows, self.cols, squeeze=False)
         self.axes = {(r, c): grid[r, c] for r in range(self.rows) for c in range(self.cols)}
-        self._tidy_link_groups()
+        self._tidy_links()
         for cell in self.axes:
             self._draw_panel(cell)
         self._update_filename()
@@ -1241,7 +1289,8 @@ class Plotter(tk.Tk):
 
     def _frame(self, cell):
         """Orange frame on the selected panel, when there's more than one, and a
-        paler dashed one on the panels linked to it (its FFTs and derivatives too)."""
+        paler dashed one on the panels linked to it (its FFTs and derivatives
+        too), heavier on the one whose link the Linking tab shows."""
         several = len(self.axes) > 1
         if several and cell == self.selected:
             colour, width = SELECTED, 2.5
@@ -1251,7 +1300,8 @@ class Plotter(tk.Tk):
         dashed = (colour == "black" and self.selected in self.panels
                   and cell in self._link_partners(self.selected))
         if dashed:
-            colour, width = PARTNER, 2.0
+            chosen = self.panels[cell].id == self.link_partner
+            colour, width = PARTNER, 3.0 if chosen else 1.6
         for spine in self.axes[cell].spines.values():
             spine.set_edgecolor(colour)
             spine.set_linewidth(width)
@@ -1374,16 +1424,14 @@ class Plotter(tk.Tk):
         return self.selected
 
     def _derived(self, source, operation):
-        """A new derived panel of `source`: copies of its lines, in its link group
-        (starting one if it has none), sharing everything with it so it follows
-        every change, as a Sync tick list the user can then trim or Freeze."""
+        """A new derived panel of `source`: copies of its lines, linked to it with
+        every Sync box ticked, so it follows every change; the link's ticks can
+        then be trimmed, or it frozen, like any link."""
         p = self.panels[source]
-        if p.link_group is None:
-            p.link_group = max((q.link_group or 0 for q in self.panels.values()), default=0) + 1
-        everything = " ".join(SYNC)
-        p.sync = everything
-        return Panel([l.copy() for l in p.lines], p.selected, source=source,
-                     operation=operation, link_group=p.link_group, sync=everything)
+        derived = Panel([l.copy() for l in p.lines], p.selected, source=source,
+                        operation=operation)
+        self.links[frozenset((p.id, derived.id))] = Link(" ".join(SYNC))
+        return derived
 
     def new_derived_panel(self, operation):
         """Add a row below the grid, with the selected panel's FFT or derivative under it."""
@@ -1566,33 +1614,28 @@ class Plotter(tk.Tk):
 
     # --- linked data ------------------------------------------------------
 
-    def _link_groups(self):
-        """Lists of cells whose panels plot the same data, each in grid order."""
-        groups = {}
-        for cell in sorted(self.panels):
-            if self.panels[cell].link_group is not None:
-                groups.setdefault(self.panels[cell].link_group, []).append(cell)
-        return list(groups.values())
+    def _pair(self, a, b):
+        """The key of the link between the panels in cells `a` and `b`."""
+        return frozenset((self.panels[a].id, self.panels[b].id))
 
     def _link_partners(self, cell):
-        """The other cells whose panels plot the same data as `cell`'s."""
-        if cell not in self.panels or self.panels[cell].link_group is None:
+        """The cells of the panels linked directly to `cell`'s, in grid order."""
+        if cell not in self.panels:
             return []
-        group = self.panels[cell].link_group
-        return [c for c in sorted(self.panels)
-                if c != cell and self.panels[c].link_group == group]
+        return [c for c in sorted(self.panels) if c != cell and self._pair(cell, c) in self.links]
 
     def _tied(self, cell):
-        """Every panel a change to `cell`'s lines shows in: it and those linked to it."""
-        return [cell, *self._link_partners(cell)]
+        """`cell` and every panel joined to it through links, one link after
+        another: lines are added and removed across all of them, so they stay
+        paired, and a change to one may show in any of them."""
+        tied = [cell]
+        for c in tied:
+            tied += [d for d in self._link_partners(c) if d not in tied]
+        return tied
 
     def _group_lists(self, cell):
-        """The lists of lines in `cell`'s linked group, `cell`'s first."""
-        lists = []
-        for c in [cell, *self._link_partners(cell)]:
-            if not any(self.panels[c].lines is lines for lines in lists):
-                lists.append(self.panels[c].lines)
-        return lists
+        """The lists of lines of the panels `_tied` to `cell`, `cell`'s first."""
+        return [self.panels[c].lines for c in self._tied(cell)]
 
     def _clear_ranges(self, lines, axes):
         """Clear typed ranges on the panel drawing `lines`, when what's plotted on
@@ -1602,61 +1645,85 @@ class Plotter(tk.Tk):
                 clear_ranges(p, axes)
 
     def _sync_inputs(self, cell):
-        """Copy `cell`'s lines' settings to the linked panels' lines, line by
-        line: each SYNC key that both panels share."""
-        me = self.panels[cell]
-        if me.frozen:
-            return
-        for other in (self.panels[c] for c in self._link_partners(cell)):
-            if other.frozen:
-                continue
-            lines = other.lines
-            keys = [k for k in SYNC if k in me.synced & other.synced]
-            for mine, theirs in zip(lines, me.lines):
-                old_x, old_y = (mine.x, mine.x_fn), (mine.y, mine.y_fn, mine.background)
-                for key in keys:
-                    for attr in SYNC[key]:
-                        # A value in the plotted x only means the same with the same x.
-                        if attr in X_UNITS and (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
-                            continue
-                        setattr(mine, attr, getattr(theirs, attr))
-                    if key in ("x", "x_fn") and (mine.x, mine.x_fn) != old_x:
-                        # In the old x; x comes before the keys that could set them.
-                        mine.span = mine.fit_from = mine.fit_to = None
-                        self._clear_ranges(lines, "x")
-                new_y = (mine.y, mine.y_fn, mine.background)
-                if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
-                    self._clear_ranges(lines, "y")
+        """Copy `cell`'s lines' settings to the panels linked directly to it, over
+        each link that isn't frozen, as far as that link shares them."""
+        for other in self._link_partners(cell):
+            link = self.links[self._pair(cell, other)]
+            if not link.frozen:
+                self._sync_across(cell, other, link)
+
+    def _sync_across(self, cell, other, link):
+        """Copy `cell`'s lines' settings that `link` shares to `other`'s, line by line."""
+        lines = self.panels[other].lines
+        keys = [k for k in SYNC if k in link.synced]
+        for mine, theirs in zip(lines, self.panels[cell].lines):
+            old_x, old_y = (mine.x, mine.x_fn), (mine.y, mine.y_fn, mine.background)
+            for key in keys:
+                for attr in SYNC[key]:
+                    # A value in the plotted x only means the same with the same x.
+                    if attr in X_UNITS and (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
+                        continue
+                    setattr(mine, attr, getattr(theirs, attr))
+                if key in ("x", "x_fn") and (mine.x, mine.x_fn) != old_x:
+                    # In the old x; x comes before the keys that could set them.
+                    mine.span = mine.fit_from = mine.fit_to = None
+                    self._clear_ranges(lines, "x")
+            new_y = (mine.y, mine.y_fn, mine.background)
+            if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
+                self._clear_ranges(lines, "y")
+
+    def _chosen_link(self):
+        """(partner cell, Link) of the link chosen in the Linking tab for the
+        selected panel: the partner last chosen, else the first; or (None, None)."""
+        partners = self._link_partners(self.selected)
+        if not partners:
+            return None, None
+        chosen = next((c for c in partners if self.panels[c].id == self.link_partner),
+                      partners[0])
+        self.link_partner = self.panels[chosen].id
+        return chosen, self.links[self._pair(self.selected, chosen)]
+
+    def choose_link(self, partner_id):
+        """Show the link with that panel in the Linking tab."""
+        self.link_partner = partner_id
+        self.link_status()
+        for cell in self.axes:
+            self._frame(cell)
+        self.canvas.draw_idle()
 
     def freeze(self):
-        """Freeze or unfreeze the selected panel's link. Frozen, it stays in its
-        group (lines are still added and removed in step) but no settings cross
-        either way; unfreezing sends its synced settings to the others."""
-        p = self.panels[self.selected]
-        p.frozen = not p.frozen
-        self._sync_inputs(self.selected)  # does nothing if it was just frozen
+        """Freeze or unfreeze the chosen link. Frozen, it's kept (lines are still
+        added and removed in step) but no settings cross it either way;
+        unfreezing sends the selected panel's settings it shares across."""
+        partner, link = self._chosen_link()
+        if link is None:
+            return
+        link.frozen = not link.frozen
+        if not link.frozen:
+            self._sync_across(self.selected, partner, link)
         self._redraw_selected("x", "x")
 
     def set_sync(self, key):
-        """Tick or untick `key` in the selected panel's sync. Ticking it sends
-        the selected panel's setting to the others that share it, as an edit would."""
-        p = self.panels[self.selected]
-        synced = p.synced | {key} if self.sync_vars[key].get() else p.synced - {key}
-        p.sync = " ".join(k for k in SYNC if k in synced)
-        self._sync_inputs(self.selected)
+        """Tick or untick `key` on the chosen link. Ticking it sends the selected
+        panel's setting across, as an edit would."""
+        partner, link = self._chosen_link()
+        if link is None:
+            return
+        synced = link.synced | {key} if self.sync_vars[key].get() else link.synced - {key}
+        link.sync = " ".join(k for k in SYNC if k in synced)
+        if not link.frozen:
+            self._sync_across(self.selected, partner, link)
         self._redraw_selected("x", "x")
 
-    def _tidy_link_groups(self):
-        """Drop groups left with one panel (after an unlink or a smaller layout),
-        and forget a derived panel's source once it no longer follows it."""
-        for group in self._link_groups():
-            if len(group) == 1:
-                self.panels[group[0]].link_group = None
-                self.panels[group[0]].frozen = False  # nothing left to freeze against
-        for p in self.panels.values():
-            source = self.panels.get(p.source)
-            if p.source is not None and (source is None or p.link_group is None
-                                         or source.link_group != p.link_group):
+    def _tidy_links(self):
+        """Drop links to panels that are gone (deleted, replaced or outside the
+        layout), and forget a derived panel's source once no link joins them."""
+        ids = {p.id for p in self.panels.values()}
+        for pair in [pair for pair in self.links if not pair <= ids]:
+            del self.links[pair]
+        for cell, p in self.panels.items():
+            if p.source is not None and (p.source not in self.panels
+                                         or self._pair(cell, p.source) not in self.links):
                 p.source = None
 
     def _numbers(self, cells):
@@ -1665,59 +1732,57 @@ class Plotter(tk.Tk):
         return numbers[0] if len(numbers) == 1 else f"{', '.join(numbers[:-1])} and {numbers[-1]}"
 
     def link_panels(self):
-        """Wait for a click on the panel whose data the selected one should plot."""
+        """Wait for a click on the panel to link the selected one to."""
         self.stop_picking()
         if len(self.panels) == 1:
             self._say("There's only one panel; choose a bigger Layout first.", error=True)
             return
         self.link_pick = self.selected
-        self._say("Click the panel to plot the same data as; Esc cancels.")
+        self._say("Click the panel to link to; Esc cancels.")
 
     def _link(self, cell, target):
-        """Link `cell` (and any group it's in) to `target`'s data.
+        """Link `cell` to `target`, taking `target`'s settings the new link shares.
 
-        `cell`'s side takes `target`'s number of lines, and whatever both
-        sides sync (by default the data input and colours)."""
+        Joining two sets of linked panels, `cell`'s side also takes `target`'s
+        number of lines, so lines stay paired across the links."""
         self.stop_picking()
         if target == cell:
             self._say("Click a different panel to link to.", error=True)
             return
-        mine, theirs = self.panels[cell].link_group, self.panels[target].link_group
-        if mine is not None and mine == theirs:
+        pair = self._pair(cell, target)
+        if pair in self.links:
             self._say("Those panels are already linked.")
             return
         source = self.panels[target].lines
-        followers = [lines for lines in self._group_lists(cell) if lines is not source]
+        followers = [] if target in self._tied(cell) else self._group_lists(cell)
         extra = sum(max(0, len(lines) - len(source)) for lines in followers)
         if extra and not messagebox.askyesno(
                 "Link panels?",
                 f"Panel {self._number(target)} has {len(source)} line"
                 f"{'s' if len(source) > 1 else ''}, so {extra} of panel "
-                f"{self._number(cell)}'s will be removed. Link anyway?", parent=self):
+                f"{self._number(cell)}'s (and those linked to it) will be removed. "
+                f"Link anyway?", parent=self):
             return
-        group = next((g for g in (theirs, mine) if g is not None),
-                     max((p.link_group or 0 for p in self.panels.values()), default=0) + 1)
-        for c, p in self.panels.items():  # merge both groups, or start one
-            if c in (cell, target) or (p.link_group is not None and p.link_group in (mine, theirs)):
-                p.link_group = group
         for lines in followers:  # same number of lines as the target's
             del lines[len(source):]
             while len(lines) < len(source):
                 new = source[len(lines)].copy()
                 new.colour = None
                 lines.append(new)
-        self._sync_inputs(target)
+        self.links[pair] = link = Link()
+        self._sync_across(target, cell, link)
+        self.link_partner = self.panels[target].id  # show the new link
         for p in self.panels.values():
             p.selected = min(p.selected, len(p.lines) - 1)
         self._build_axes()
         self._load_controls()
 
     def unlink_panel(self):
-        """Take the selected panel out of its linked group; it keeps its lines."""
+        """Remove the chosen link; both panels keep their lines, and any other links."""
         self.stop_picking()
-        if self.panel.link_group is not None:
-            self.panel.link_group = None
-            self.panels[self.selected].frozen = False
+        partner, link = self._chosen_link()
+        if link is not None:
+            del self.links[self._pair(self.selected, partner)]
             self._build_axes()
             self._load_controls()
 
@@ -1813,7 +1878,7 @@ class Plotter(tk.Tk):
         self._prune_cache()
         if self.restoring:
             return
-        now = session.dump(self.panels, self.rows, self.cols)
+        now = session.dump(self.panels, self.rows, self.cols, self.links)
         if self.last_state is None:  # the window's first draw
             self.last_state = now
             return
@@ -1841,7 +1906,8 @@ class Plotter(tk.Tk):
             self._restore(state)
         finally:
             self.restoring = False
-        self.last_state, self.merging = session.dump(self.panels, self.rows, self.cols), False
+        self.last_state = session.dump(self.panels, self.rows, self.cols, self.links)
+        self.merging = False
         self._say("Undone. (One step only.)")
 
     # --- sessions ---------------------------------------------------------
@@ -1849,12 +1915,12 @@ class Plotter(tk.Tk):
     def _restore(self, state, selected=None):
         """Replace the panels with those in `state` (from session.dump). Raises
         ValueError, changing nothing, if it isn't one."""
-        rows, cols, panels = session.load(state)
+        rows, cols, panels, links = session.load(state)
         self.stop_picking()
         for cell, p in panels.items():  # keep the line each panel had selected
             if cell in self.panels:
                 p.selected = min(self.panels[cell].selected, len(p.lines) - 1)
-        self.rows, self.cols, self.panels = rows, cols, panels
+        self.rows, self.cols, self.panels, self.links = rows, cols, panels, links
         if selected in panels:
             self.selected = selected
         elif self.selected not in panels:
@@ -1877,7 +1943,7 @@ class Plotter(tk.Tk):
                 return
         data = {session.KEY: session.VERSION, "data_dir": self.data_dir,
                 "selected": session.cell_key(self.selected),
-                **session.dump(self.panels, self.rows, self.cols)}
+                **session.dump(self.panels, self.rows, self.cols, self.links)}
         if self.filename.get().strip() != self.auto_name:  # a name the user typed
             data["save_as"] = self.filename.get().strip()
         try:

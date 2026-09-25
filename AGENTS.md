@@ -81,12 +81,11 @@ Keep that order. Things that depend on it:
 
 `Panel.operation` makes a derived panel: "fft", "d1" or "d2" ("" is a data
 panel; `Panel.derived`). It draws that of its own lines. `_derived` makes
-one with copies of its data panel's lines, in that panel's link group, with
-every SYNC key ticked on both, so it follows every change through the link
-(see below) and can be frozen or partly synced like any linked panel.
-`source` is only the cell it was made from, for "FFT of panel N";
-`_tidy_link_groups` clears it once the panel no longer shares a group with
-that one (unlinked, deleted, removed by the layout). So:
+one with copies of its data panel's lines, linked to it with every SYNC key
+ticked, so it follows every change through the link (see below) and can be
+frozen or partly synced like any link. `source` is only the cell it was
+made from, for "FFT of panel N"; `_tidy_links` clears it once no link joins
+them (unlinked, deleted, removed by the layout). So:
 
 - Check `derived` / `operation`, never `source`, for whether a panel is
   derived. `operation` only matters where FFTs and derivatives differ
@@ -104,31 +103,37 @@ that one (unlinked, deleted, removed by the layout). So:
   differentiated. Keep the FFT's binning as it is unless you mean to change
   its output.
 
-## Linked data
+## Links
 
-`Panel.link_group` puts panels in a group whose lines match line by line:
-the panels have the same number of lines, and share the settings they sync.
-`model.SYNC` maps each Sync tick box's key to the `Line` fields it covers;
-`Panel.sync` is the space-separated keys a panel ticks (a string, so sessions
-save it as they are), read through `Panel.synced`. A key syncs between two
-panels only if both tick it. Each panel has its own `Line` objects, and
-axis ranges and zoom are each panel's own. So:
+A link joins two panels: `Plotter.links` maps the frozenset of their
+`Panel.id`s (ids, not cells, as Delete panel and Layout... move panels) to
+a `Link`, whose `sync` names the `model.SYNC` keys it shares (read through
+`Link.synced`) and `frozen` pauses it. Each panel has its own `Line`
+objects, and axis ranges and zoom are each panel's own. So:
 
-- After changing a line's settings, call `_sync_inputs(cell)`, which copies
-  the ones both sides sync to the group (clearing a member's x-unit settings
-  if its x changes, and never copying `X_UNITS` between different x);
-  `apply_controls`, `swap`, the line editor and the colour picker do. Keep
-  `SYNC`'s "x" before the keys holding x-unit settings: that clearing runs
-  after x is copied. Add and remove lines through `add_line` /
-  `remove_line`, which do it in every list in `_group_lists`.
-- `Panel.frozen` makes `_sync_inputs`
-  skip it both ways; `freeze` sends its settings on unfreezing. Lines are
-  still added and removed across frozen panels, so pairs stay matched.
-  Leaving a group (`unlink_panel`, `_tidy_link_groups`) unfreezes it.
-- `_tied(cell)` is every panel a change shows in: the group plus each
-  member's FFT or data panel. `_redraw_selected` redraws those.
-- A group's FFT panel shares one member's list, so `_group_lists`
-  deduplicates by identity: never replace a list, only change it in place.
+- Settings cross links directly only. After changing a line's settings,
+  call `_sync_inputs(cell)`, which copies what each unfrozen link from
+  `cell` shares to that partner (`_sync_across`: clearing its x-unit
+  settings if its x changes, and never copying `X_UNITS` between different
+  x); `apply_controls`, `swap`, the line editor and the colour picker do.
+  It doesn't go on from the partner. Keep `SYNC`'s "x" before the keys
+  holding x-unit settings: that clearing runs after x is copied.
+- Lines stay paired across whole chains: `_tied(cell)` is every panel
+  joined to `cell` through links, one after another, and `add_line` /
+  `remove_line` change every list in `_group_lists` (those panels'). `_link`
+  gives `cell`'s side the target's number of lines when the two sides
+  weren't joined yet. `_redraw_selected` and `_set_selected_line` use
+  `_tied` too.
+- The Linking tab shows one link at a time: `_chosen_link` is the selected
+  panel's link with `link_partner` (an id), else its first. Freeze, Unlink
+  and the Sync boxes act on it; ticking a box or unfreezing sends the
+  selected panel's settings across it.
+- `_tidy_links`, run by `_build_axes`, drops links to panels that are gone
+  and clears a derived panel's `source` once no link joins them.
+- `session.dump` / `load` carry the links (sorted, so undo compares equal
+  states equal); sessions before format 4 had groups (`link_group`, and
+  `sync` / `frozen` on each panel), which `load` turns into a link between
+  every pair in a group, sharing what both ticked and frozen if either was.
 
 ## Typed axis ranges
 
@@ -152,7 +157,7 @@ canvas draws, and on the real figure that would break every redraw after.
 ## Sessions
 
 `session.dump` / `session.load` turn `self.panels` into plain data and back;
-`Plotter._restore` swaps it in. `dump` marks its output with `FORMAT`;
+`Plotter._restore` swaps it and the links in. `dump` marks its output with `FORMAT`;
 without it `load` reads the version 1 layout (`_load_old`), where a derived
 panel had no lines of its own and every panel an "fft" operation. `load` drops unknown or mistyped fields and menu values that
 aren't keys, and raises ValueError for anything that isn't a session, before

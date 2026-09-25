@@ -176,30 +176,31 @@ stay until it's done or cancelled.
   panel to change its order or window, or go **Back to data**. Derivatives magnify
   noise, the second much more than the first, so widen the window until
   the curve is steady; a jump in the data shows as a spike.
-- **Linked data** (Linking tab): **Link...** then click another
-  panel, and the two share their lines' settings, line by line (the selected
-  panel takes the other's number of lines, asking first if some of its own
-  would go). From then on adding or removing a line in one does the same in
-  all of them, and changing a synced setting does too. **Sync** chooses, per
-  panel, what it shares: **Dataset**, **X axis**, **X function**, **Y
-  axis**, **Y function**, **Colour** and **Line style** (line, width, marker
-  and its size) are ticked to start with; **Smoothing** and **Background**
-  aren't. A
-  setting syncs between two panels only if both tick it, so e.g. one panel
-  shows the raw data, a linked one the same data with the background
-  subtracted, and another that smoothed; or untick Y axis to plot another
-  column against the same x. Ticking a box sends the selected panel's
-  setting to the others that tick it. Fit ranges and x-unit windows only
-  sync between panels with the same x. FFT and derivative panels are linked
-  panels too, so all of this works on them. Axis ranges and zoom stay each panel's own. Any number of panels
-  can join (linking two groups merges them); the selected panel's linked
-  partners get a dashed frame. **Unlink** takes the selected one out,
-  keeping what it plots. **Freeze** pauses the selected panel's link without
-  leaving the group: nothing it syncs crosses to or from it (adding or
-  removing a line still happens in all of them, so lines stay paired), and
-  the rest of the group keeps syncing among themselves. **Unfreeze** sends
-  its synced settings to the others, so what you changed while it was
-  frozen is carried across.
+- **Links** (Linking tab): **Link...** then click another panel, and the
+  two are linked: they share their lines' settings, line by line (the
+  selected panel, and any panels linked to it, take the other's number of
+  lines, asking first if some would go). Each link is its own thing: a panel
+  linked to panels 1 and 3 has a tab for each link, **Panel 1** and **Panel
+  3**, which scroll sideways if there are too many, and the chosen link's
+  panel gets a heavier dashed frame. The chosen link's **Sync** boxes say
+  what it shares: **Dataset**, **X axis**, **X function**, **Y axis**, **Y
+  function**, **Colour** and **Line style** (line, width, marker and its
+  size) are ticked to start with; **Smoothing** and **Background** aren't.
+  The link is the same seen from either panel: panel 1's **Panel 2** tab
+  shows the ticks of panel 2's **Panel 1** tab. So e.g. one panel shows the
+  raw data, a linked one the same data with the background subtracted, and
+  another that smoothed; or untick Y axis to plot another column against
+  the same x. Ticking a box sends the selected panel's setting across.
+  Settings only cross links directly: with 2 linked to 1 and to 3 (but 1
+  not to 3), a change in 1 reaches 2 and stops there; link 1 and 3 too to
+  keep them in step. Adding or removing a line, though, happens in every
+  panel joined through links, so lines stay paired. Fit ranges and x-unit
+  windows only cross between panels with the same x. FFT and derivative
+  panels are linked to their data panel, with every box ticked. Axis ranges
+  and zoom stay each panel's own. **Unlink** removes the chosen link, and
+  **Freeze** pauses it, sharing nothing either way until **Unfreeze**, which
+  sends the selected panel's settings across, carrying over what changed
+  while it was frozen; the panel's other links carry on.
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own

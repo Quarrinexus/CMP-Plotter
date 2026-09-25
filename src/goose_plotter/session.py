@@ -5,18 +5,19 @@ import math
 
 from goose_plotter import background, smoothing, spectrum
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, OPERATIONS,
-                                 STYLES, SYNC, Line, Panel)
+                                 STYLES, SYNC, Line, Link, Panel)
 from goose_plotter.widgets import MAX_GRID
 
 # 2: derived panels have their own lines, in their data panel's link group.
 # 3: a title, axis label or legend name of None is the automatic one, "" none.
-VERSION = 3
+# 4: links are between pairs of panels, each with its own ticks and freeze.
+VERSION = 4
 KEY = "goose_plotter_session"  # the session file's marker, holding VERSION
 # `dump`'s own marker, so `load` reads undo snapshots and files alike; its
 # absence means the layout of version 1, where a derived panel shared its
 # data panel's lines and every panel carried an operation. Before 3, "" was
-# the automatic text.
-FORMAT = 3
+# the automatic text; before 4, links were groups, each panel with its ticks.
+FORMAT = 4
 TEXTS = {Panel: ("title", "x_label", "y_label"), Line: ("label",)}
 
 # Not saved: what the last draw found, and which line the controls edit.
@@ -27,12 +28,13 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                   "style": STYLES, "marker": MARKERS},
            Panel: {"legend": LEGENDS, "grid": GRIDS, "grid_axis": GRID_AXES,
                    "grid_style": GRID_STYLES, "operation": OPERATIONS, "window": spectrum.WINDOWS,
-                   "pad": spectrum.PADDING}}
+                   "pad": spectrum.PADDING},
+           Link: {}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.
 POSITIVE = {Line: {"width", "marker_size", "window", "span"},
-            Panel: {"f_max", "derivative_window"}}
+            Panel: {"f_max", "derivative_window"}, Link: set()}
 
 
 def cell_key(cell):
@@ -48,9 +50,10 @@ def _plain(obj):
     return {f.name: getattr(obj, f.name) for f in fields(obj) if f.name not in SKIP}
 
 
-def dump(panels, rows, cols):
-    """The layout and every panel's settings and lines, with a derived panel's
-    source cell while it has one."""
+def dump(panels, rows, cols, links):
+    """The layout, every panel's settings and lines (with a derived panel's
+    source cell while it has one), and the links, in a fixed order so equal
+    states dump equal (undo compares them)."""
     out = {}
     for cell, p in sorted(panels.items()):
         data = _plain(p)
@@ -58,7 +61,10 @@ def dump(panels, rows, cols):
         if p.source is not None:
             data["source"] = cell_key(p.source)
         out[cell_key(cell)] = data
-    return {"format": FORMAT, "rows": rows, "cols": cols, "panels": out}
+    saved_links = [{"a": a, "b": b, "sync": link.sync, "frozen": link.frozen}
+                   for (a, b), link in sorted((tuple(sorted(pair)), link)
+                                              for pair, link in links.items())]
+    return {"format": FORMAT, "rows": rows, "cols": cols, "panels": out, "links": saved_links}
 
 
 def _allowed(f, value):
@@ -93,7 +99,8 @@ def _build(cls, data, **extra):
 
 
 def load(state):
-    """(rows, cols, panels) from `dump`'s output. Raises ValueError if it isn't one."""
+    """(rows, cols, panels, links) from `dump`'s output, links being
+    {frozenset of two panel ids: Link}. Raises ValueError if it isn't one."""
     try:
         rows, cols = int(state["rows"]), int(state["cols"])
         saved = {key_cell(k): v for k, v in state["panels"].items()}
@@ -102,8 +109,10 @@ def load(state):
     if not (1 <= rows <= MAX_GRID and 1 <= cols <= MAX_GRID):
         raise ValueError(f"a {rows} x {cols} layout is bigger than the plotter allows")
     grid = [(r, c) for r in range(rows) for c in range(cols)]
-    if state.get("format") not in (2, FORMAT):
-        return rows, cols, _blank_is_auto(_load_old(saved, grid))
+    fmt = state.get("format")
+    if fmt not in (2, 3, FORMAT):
+        panels, groups = _load_old(saved, grid)
+        return rows, cols, _blank_is_auto(panels), _group_links(panels, groups)
     panels = {}
     for cell in grid:
         data = saved.get(cell)
@@ -112,7 +121,59 @@ def load(state):
             continue
         lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines, source=_source(data, grid))
-    return rows, cols, panels if state["format"] == FORMAT else _blank_is_auto(panels)
+    seen = set()
+    for p in panels.values():  # ids must tell panels apart; a file edited by hand may not
+        if p.id in seen:
+            p.id = Panel().id
+        seen.add(p.id)
+    if fmt == FORMAT:
+        return rows, cols, panels, _links(state.get("links"), panels)
+    groups = {cell: _group_of(saved.get(cell), old_ticks=False) for cell in panels}
+    if fmt == 2:
+        panels = _blank_is_auto(panels)
+    return rows, cols, panels, _group_links(panels, groups)
+
+
+def _links(saved, panels):
+    """{frozenset of ids: Link} from `dump`'s list, keeping only links between
+    two different panels that are there, once each."""
+    ids = {p.id for p in panels.values()}
+    links = {}
+    for data in saved if isinstance(saved, list) else []:
+        if not isinstance(data, dict):
+            continue
+        pair = frozenset((data.get("a"), data.get("b")))
+        if len(pair) == 2 and pair <= ids and pair not in links:
+            links[pair] = _build(Link, data)
+    return links
+
+
+def _group_of(data, old_ticks):
+    """(group, ticks, frozen) of a panel as saved before format 4, when links
+    were groups and each panel ticked what it shared; None if in no group.
+    `old_ticks`: X and Y axis then covered their Function boxes too."""
+    if not isinstance(data, dict) or not isinstance(data.get("link_group"), int) \
+            or isinstance(data.get("link_group"), bool):
+        return None
+    words = data.get("sync") if isinstance(data.get("sync"), str) else Link().sync
+    words = words.split()
+    if old_ticks or not {"x_fn", "y_fn"} & set(words):
+        words += [k for k, axis in (("x_fn", "x"), ("y_fn", "y")) if axis in words]
+    return data["link_group"], set(words) & set(SYNC), data.get("frozen") is True
+
+
+def _group_links(panels, groups):
+    """Links for panels saved in groups ({cell: _group_of}): every pair in a
+    group, sharing what both ticked, frozen if either was, as they behaved."""
+    links = {}
+    members = [(cell, g) for cell, g in groups.items() if g is not None and cell in panels]
+    for i, (a, (group_a, ticks_a, frozen_a)) in enumerate(members):
+        for b, (group_b, ticks_b, frozen_b) in members[i + 1:]:
+            if group_a == group_b:
+                shared = ticks_a & ticks_b
+                links[frozenset((panels[a].id, panels[b].id))] = Link(
+                    " ".join(k for k in SYNC if k in shared), frozen_a or frozen_b)
+    return links
 
 
 def _blank_is_auto(panels):
@@ -135,11 +196,11 @@ def _source(data, grid):
 
 
 def _load_old(saved, grid):
-    """Panels from a version 1 layout. There a derived panel had a source and
-    no lines of its own, and all panels an operation ("fft" by default). Here
-    it gets copies of its data panel's lines, in its link group, sharing
-    everything, as that list did."""
-    panels = {}
+    """(panels, groups) from a version 1 layout. There a derived panel had a
+    source and no lines of its own, and all panels an operation ("fft" by
+    default). Here it gets copies of its data panel's lines, in its group,
+    sharing everything, as that list did."""
+    panels, groups = {}, {}
     for cell in grid:  # data panels first: derived panels copy their lines
         data = saved.get(cell)
         if data is None or (isinstance(data, dict) and "source" in data):
@@ -147,12 +208,8 @@ def _load_old(saved, grid):
         lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines)
         panels[cell].operation = ""
-        # X and Y axis then covered their Function boxes too.
-        words = panels[cell].sync.split()
-        panels[cell].sync = " ".join(
-            k for k in SYNC
-            if k in words or (k == "x_fn" and "x" in words) or (k == "y_fn" and "y" in words))
-    groups = [p.link_group for p in panels.values() if p.link_group is not None]
+        groups[cell] = _group_of(data, old_ticks=True)
+    numbers = [g[0] for g in groups.values() if g is not None]
     for cell in grid:
         data = saved.get(cell)
         if cell in panels:
@@ -164,11 +221,11 @@ def _load_old(saved, grid):
         data_panel = panels[source]
         p = _build(Panel, data, lines=[l.copy() for l in data_panel.lines], source=source)
         p.operation = p.operation or "fft"
-        if data_panel.link_group is None:
-            data_panel.link_group = max(groups, default=0) + 1
-            groups.append(data_panel.link_group)
-        p.link_group = data_panel.link_group
         p.selected = min(data_panel.selected, len(p.lines) - 1)
-        data_panel.sync = p.sync = " ".join(SYNC)
+        if groups[source] is None:
+            numbers.append(max(numbers, default=0) + 1)
+            groups[source] = numbers[-1], set(SYNC), False
+        groups[source] = groups[source][0], set(SYNC), groups[source][2]  # shares everything
+        groups[cell] = groups[source][0], set(SYNC), False
         panels[cell] = p
-    return panels
+    return panels, groups

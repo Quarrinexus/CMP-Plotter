@@ -1,6 +1,7 @@
 """What's plotted: panels holding lines, and how those lines are coloured and labelled."""
 
 from dataclasses import dataclass, field, replace
+from uuid import uuid4
 
 from matplotlib.colors import to_rgb
 import numpy as np
@@ -11,8 +12,8 @@ from goose_plotter.datasets import describe
 from goose_plotter.background import describe as describe_background
 from goose_plotter.smoothing import describe as describe_smoothing
 
-# What linked panels can share, line by line: a panel's `sync` names the
-# keys it shares, and a key syncs between two panels that both name it.
+# What a link between two panels can share, line by line: a Link's `sync`
+# names the keys it shares.
 SYNC = {"run": ("run",), "x": ("x",), "x_fn": ("x_fn",), "y": ("y",), "y_fn": ("y_fn",),
         "colour": ("colour",),
         "smoothing": ("smooth", "window", "in_x", "span", "order"),
@@ -97,13 +98,28 @@ class Line:
 
 
 @dataclass
+class Link:
+    """A link between two panels (the Plotter keeps them by the pair of their
+    ids): which settings it shares, line by line, both ways, and whether it's
+    frozen, kept but sharing nothing for now."""
+    sync: str = SYNC_DEFAULT  # SYNC keys, space-separated
+    frozen: bool = False
+
+    @property
+    def synced(self):
+        """The SYNC keys in `sync` (unknown words, e.g. from a session, are ignored)."""
+        return set(self.sync.split()) & set(SYNC)
+
+
+@dataclass
 class Panel:
     """One subplot: its lines and which of them the controls edit.
 
     A derived panel (an FFT or a derivative, by `operation`) draws that of its
     lines. It's made in its data panel's link group, with copies of its lines,
     so the two stay in step through the link (and can be frozen or partly
-    synced); `source` is that data panel's cell while it still follows it."""
+    synced); `source` is that data panel's cell while it still follows it.
+    `id` names the panel for its links, as its cell can change."""
     lines: list = field(default_factory=lambda: [Line()])
     selected: int = 0
     source: tuple | None = None
@@ -112,9 +128,7 @@ class Panel:
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
     derivative_window: int = 51  # derivative panels: grid points per fit, odd
-    link_group: int | None = None  # panels with the same number plot the same data
-    sync: str = SYNC_DEFAULT  # the SYNC keys it shares with its group, space-separated
-    frozen: bool = False  # in its group, but its settings neither sent nor taken for now
+    id: str = field(default_factory=lambda: uuid4().hex[:8])
     # Typed axis ranges, in the plotted units; None: that end is automatic.
     x_min: float | None = None
     x_max: float | None = None
@@ -136,11 +150,6 @@ class Panel:
     @property
     def derived(self):
         return bool(self.operation)
-
-    @property
-    def synced(self):
-        """The SYNC keys in `sync` (unknown words, e.g. from a session, are ignored)."""
-        return set(self.sync.split()) & set(SYNC)
 
     def copy(self):
         """An independent data panel with copies of the lines (and nothing else of
