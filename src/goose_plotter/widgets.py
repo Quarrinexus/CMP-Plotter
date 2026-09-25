@@ -178,6 +178,131 @@ class OverwriteDialog(tk.Toplevel):
         self.destroy()
 
 
+class SaveOptionsPopup(tk.Toplevel):
+    """How Save figure writes the figure: its size (as on screen, or typed in
+    inches or cm), dpi and background. Changes apply as they're made, through
+    `on_change(options)`, which returns why they can't be used, or ""."""
+
+    DEFAULTS = {"size": "screen", "width": 6.0, "height": 4.0, "unit": "in", "dpi": 200,
+                "transparent": False}
+    CM = 2.54  # per inch
+
+    def __init__(self, parent, options, screen_inches, on_change):
+        super().__init__(parent)
+        self.title("Save options")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.on_change, self.screen = on_change, screen_inches
+        self.size = tk.StringVar(value=options["size"])
+        self.unit = tk.StringVar(value=options["unit"])
+        scale = self.CM if options["unit"] == "cm" else 1
+        self.width = tk.StringVar(value=f"{options['width'] * scale:.3g}")
+        self.height = tk.StringVar(value=f"{options['height'] * scale:.3g}")
+        self.dpi = tk.StringVar(value=str(options["dpi"]))
+        self.transparent = tk.BooleanVar(value=options["transparent"])
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(body, text="Size", foreground=theme.MUTED).pack(anchor=tk.W)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        for key, text in (("screen", "As on screen"), ("custom", "Custom")):
+            ttk.Radiobutton(row, text=text, variable=self.size, value=key, style="Toolbutton",
+                            command=self._apply).pack(side=tk.LEFT, padx=(0, 4))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(6, 0))
+        ttk.Label(row, text="Width").pack(side=tk.LEFT)
+        self.boxes = [ttk.Entry(row, textvariable=self.width, width=7)]
+        self.boxes[0].pack(side=tk.LEFT, padx=(4, 8))
+        ttk.Label(row, text="Height").pack(side=tk.LEFT)
+        self.boxes.append(ttk.Entry(row, textvariable=self.height, width=7))
+        self.boxes[1].pack(side=tk.LEFT, padx=(4, 8))
+        self.units = []
+        for key in ("in", "cm"):
+            button = ttk.Radiobutton(row, text=key, variable=self.unit, value=key,
+                                     style="Toolbutton", command=self._change_unit)
+            button.pack(side=tk.LEFT, padx=(0, 4))
+            self.units.append(button)
+
+        ttk.Label(body, text="Resolution", foreground=theme.MUTED).pack(
+            anchor=tk.W, pady=(10, 0))
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(row, text="DPI").pack(side=tk.LEFT)
+        dpi = ttk.Entry(row, textvariable=self.dpi, width=7)
+        dpi.pack(side=tk.LEFT, padx=(4, 8))
+        self.pixels = ttk.Label(row, foreground=theme.HINT)
+        self.pixels.pack(side=tk.LEFT)
+
+        ttk.Label(body, text="Background", foreground=theme.MUTED).pack(
+            anchor=tk.W, pady=(10, 0))
+        ttk.Checkbutton(body, text="Transparent", variable=self.transparent,
+                        command=self._apply).pack(anchor=tk.W, pady=(2, 0))
+
+        self.problem = ttk.Label(body, foreground=theme.ERROR, wraplength=300)
+        self.problem.pack(anchor=tk.W, pady=(10, 0))
+        ttk.Label(body, text="Enter in a box applies; kept for every figure",
+                  foreground=theme.HINT).pack(anchor=tk.W)
+        ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(6, 0))
+        for box in (*self.boxes, dpi):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self._apply())
+            box.bind("<FocusOut>", lambda _: self._apply())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self._show()
+
+    def _change_unit(self):
+        """Show the typed size in the other unit (it's kept in inches)."""
+        factor = self.CM if self.unit.get() == "cm" else 1 / self.CM
+        for var in (self.width, self.height):
+            try:
+                var.set(f"{float(var.get()) * factor:.3g}")
+            except ValueError:
+                pass
+        self._apply()
+
+    def options(self):
+        """The boxes as options, or raises ValueError saying what's wrong."""
+        scale = self.CM if self.unit.get() == "cm" else 1
+        try:
+            width, height = float(self.width.get()) / scale, float(self.height.get()) / scale
+        except ValueError:
+            raise ValueError("Width and height need to be numbers.") from None
+        try:
+            dpi = int(float(self.dpi.get()))
+        except ValueError:
+            raise ValueError("DPI needs to be a number.") from None
+        if not (width > 0 and height > 0):
+            raise ValueError("Width and height need to be more than 0.")
+        if not 10 <= dpi <= 2400:
+            raise ValueError("DPI needs to be from 10 to 2400.")
+        return {"size": self.size.get(), "width": width, "height": height,
+                "unit": self.unit.get(), "dpi": dpi, "transparent": self.transparent.get()}
+
+    def _apply(self):
+        try:
+            options = self.options()
+        except ValueError as err:
+            self.problem["text"] = str(err)
+            return
+        self.problem["text"] = self.on_change(options)
+        self._show()
+
+    def _show(self):
+        """Grey out the size boxes when it's as on screen, and give the size in pixels."""
+        custom = self.size.get() == "custom"
+        for widget in (*self.boxes, *self.units):
+            widget.state(["!disabled" if custom else "disabled"])
+        try:
+            options = self.options()
+        except ValueError:
+            self.pixels["text"] = ""
+            return
+        inches = (options["width"], options["height"]) if custom else self.screen
+        self.pixels["text"] = (f"{round(inches[0] * options['dpi'])} x "
+                               f"{round(inches[1] * options['dpi'])} pixels")
+
+
 # Dash patterns for the previews, in multiples of the line width (as matplotlib's).
 DASHES = {"-": None, "--": (3.7, 1.6), ":": (1, 1.65), "-.": (6.4, 1.6, 1, 1.6)}
 

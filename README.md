@@ -214,6 +214,14 @@ stay until it's done or cancelled.
   file of that name is already there, it asks before replacing it. Ticking
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
+- **Options...** (beside Save as): how Save figure writes the file. **Size**
+  is **As on screen** (the default) or **Custom**, a **Width** and
+  **Height** in inches or cm, e.g. a journal's column width; text keeps its
+  point size, so a small figure has relatively larger labels. **DPI** (200
+  to start) sets the resolution of PNGs and the like, with the size in
+  pixels shown beside it (PDF and SVG stay sharp at any DPI). **Transparent**
+  leaves out the white background. They're kept in `settings.json`, for
+  every figure until changed.
 - **Open session... / Save session...** (Files tab): a session
   is a `.json` file holding the layout and every panel and line, with its
   settings, FFT and derivative panels, links, ranges, labels and styles, plus the data

@@ -23,7 +23,7 @@ from goose_plotter.datasets import (FormatError, describe, detect_format, find_d
 from goose_plotter.format_dialog import FormatDialog
 from goose_plotter.settings import load_settings, save_settings
 from goose_plotter.widgets import (MAX_GRID, SELECTED, AxesPopup, LayoutPicker, LineStylePopup,
-                                 OverwriteDialog, line_sample)
+                                 OverwriteDialog, SaveOptionsPopup, line_sample)
 
 PARTNER = "#f0c987"  # frame around the panel locked to the selected one
 
@@ -111,6 +111,7 @@ class Plotter(tk.Tk):
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
         self.style_popup = None
         self.axes_popup = None
+        self.save_popup = None
         self.picker = None  # the SpanSelector while a fit range is being dragged
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
         self.link_pick = None  # cell while the user clicks a panel to link its data to
@@ -243,7 +244,10 @@ class Plotter(tk.Tk):
             row=0, column=0, sticky="ew", padx=(0, 3))
         self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
         self.delete_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
-        ttk.Label(save, text="Save as").pack(anchor=tk.W, pady=(10, 2))
+        row = ttk.Frame(save)
+        row.pack(fill=tk.X, pady=(10, 2))
+        ttk.Label(row, text="Save as").pack(side=tk.LEFT, anchor=tk.S)
+        ttk.Button(row, text="Options...", command=self.open_save_options).pack(side=tk.RIGHT)
         row = ttk.Frame(save)
         row.pack(fill=tk.X)
         self.filename = tk.StringVar()
@@ -1967,6 +1971,43 @@ class Plotter(tk.Tk):
                 self._say(f"Couldn't remember that: {err}", error=True)
         return dialog.replace
 
+    MAX_PIXELS = 20_000  # per side of a saved figure, to keep its memory in bounds
+
+    def _save_options(self):
+        """Save figure's size, dpi and background, from the settings (each one
+        checked, as the file can be edited by hand) over the defaults."""
+        options = dict(SaveOptionsPopup.DEFAULTS)
+        saved = self.settings.get("save_options")
+        if isinstance(saved, dict):
+            for key, default in SaveOptionsPopup.DEFAULTS.items():
+                value = saved.get(key)
+                if type(value) is type(default) or (isinstance(default, float)
+                                                     and type(value) is int):
+                    options[key] = value
+        if options["size"] not in ("screen", "custom") or options["unit"] not in ("in", "cm"):
+            return dict(SaveOptionsPopup.DEFAULTS)
+        return options
+
+    def open_save_options(self):
+        if self.save_popup and self.save_popup.winfo_exists():
+            self.save_popup.lift()
+            return
+        self.save_popup = SaveOptionsPopup(self, self._save_options(),
+                                           tuple(self.fig.get_size_inches()), self.set_save_options)
+
+    def set_save_options(self, options):
+        """Keep the options from the Save options window; why not, if they can't be used."""
+        inches = ((options["width"], options["height"]) if options["size"] == "custom"
+                  else self.fig.get_size_inches())
+        if max(inches) * options["dpi"] > self.MAX_PIXELS:
+            return f"That's too big: keep each side under {self.MAX_PIXELS} pixels."
+        self.settings["save_options"] = options
+        try:
+            save_settings(self.settings)
+        except OSError as err:
+            return f"Couldn't remember them: {err}"
+        return ""
+
     def save(self):
         if not any(l.shown for p in self.panels.values() for l in p.lines):
             self._say("Nothing plotted to save.", error=True)
@@ -1995,9 +2036,15 @@ class Plotter(tk.Tk):
         selected, self.selected = self.selected, None
         for cell in self.axes:
             self._frame(cell)
+        options = self._save_options()
+        size = self.fig.get_size_inches()
         try:
-            self.fig.savefig(out_dir / name, dpi=200)
+            if options["size"] == "custom":  # just for the file; the screen keeps its own
+                self.fig.set_size_inches(options["width"], options["height"], forward=False)
+            self.fig.savefig(out_dir / name, dpi=options["dpi"],
+                             transparent=options["transparent"])
         finally:
+            self.fig.set_size_inches(size, forward=False)
             self.selected = selected
             for cell in self.axes:
                 self._frame(cell)
