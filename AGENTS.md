@@ -92,15 +92,22 @@ colours, added and removed lines all show in both with no copying. So:
 
 ## Linked data is a different link
 
-`Panel.link_group` puts panels in a group that plots the same data: each
-line's `LINKED` settings (`model.py`: run, x, x_fn, y, y_fn, colour) match
-line by line, and the panels have the same number of lines. Unlike FFT panels
-they have their own `Line` objects, so smoothing and background stay per panel, and
-axis ranges and zoom are each panel's own. So:
+`Panel.link_group` puts panels in a group whose lines match line by line:
+the panels have the same number of lines, and share the settings they sync.
+`model.SYNC` maps each Sync tick box's key to the `Line` fields it covers;
+`Panel.sync` is the space-separated keys a panel ticks (a string, so sessions
+save it as they are), read through `Panel.synced`. A key syncs between two
+panels only if both tick it. An FFT panel's lines are its data panel's, so
+`_sync_panel` gives the data panel's ticks for either. Unlike FFT panels,
+linked panels have their own `Line` objects, and axis ranges and zoom are
+each panel's own. So:
 
-- After changing a line's inputs or colour, call `_sync_inputs(cell)`, which
-  copies them to the group (clearing a member's x-unit settings if its x
-  changes); `apply_controls`, `swap` and the colour picker do. Add and remove lines through `add_line` /
+- After changing a line's settings, call `_sync_inputs(cell)`, which copies
+  the ones both sides sync to the group (clearing a member's x-unit settings
+  if its x changes, and never copying `X_UNITS` between different x);
+  `apply_controls`, `swap`, the line editor and the colour picker do. Keep
+  `SYNC`'s "x" before the keys holding x-unit settings: that clearing runs
+  after x is copied. Add and remove lines through `add_line` /
   `remove_line`, which do it in every list in `_group_lists`.
 - `_tied(cell)` is every panel a change shows in: the group plus each
   member's FFT or data panel. `_redraw_selected` redraws those.

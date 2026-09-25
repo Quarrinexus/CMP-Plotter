@@ -11,8 +11,14 @@ from cmp_plotter.datasets import describe
 from cmp_plotter.background import describe as describe_background
 from cmp_plotter.smoothing import describe as describe_smoothing
 
-# What linked panels share, line by line: the data input, and the colour.
-LINKED = ("run", "x", "x_fn", "y", "y_fn", "colour")
+# What linked panels can share, line by line: a panel's `sync` names the
+# keys it shares, and a key syncs between two panels that both name it.
+SYNC = {"run": ("run",), "x": ("x", "x_fn"), "y": ("y", "y_fn"), "colour": ("colour",),
+        "smoothing": ("smooth", "window", "in_x", "span", "order"),
+        "background": ("background", "degree", "fit_from", "fit_to"),
+        "style": ("style", "width", "marker")}
+SYNC_DEFAULT = "run x y colour"
+X_UNITS = ("span", "fit_from", "fit_to")  # settings in the plotted x
 
 NEUTRAL = "#2464d6"  # line colour when no sample column is plotted
 
@@ -98,6 +104,7 @@ class Panel:
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
     link_group: int | None = None  # panels with the same number plot the same data
+    sync: str = SYNC_DEFAULT  # the SYNC keys it shares with its group, space-separated
     # Typed axis ranges, in the plotted units; None: that end is automatic.
     x_min: float | None = None
     x_max: float | None = None
@@ -112,6 +119,11 @@ class Panel:
     @property
     def line(self):
         return self.lines[self.selected]
+
+    @property
+    def synced(self):
+        """The SYNC keys in `sync` (unknown words, e.g. from a session, are ignored)."""
+        return set(self.sync.split()) & set(SYNC)
 
     def copy(self):
         """An independent data panel with copies of the lines (and nothing else of

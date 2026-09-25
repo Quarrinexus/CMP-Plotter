@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageTk
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
 from cmp_plotter import background, session, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import (LEGENDS, LINKED, RANGES, Panel, clear_ranges, legend_labels,
-                               line_colours, shared)
+from cmp_plotter.model import (LEGENDS, RANGES, SYNC, X_UNITS, Panel, clear_ranges,
+                               legend_labels, line_colours, shared)
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -595,14 +595,10 @@ class Plotter(tk.Tk):
         self.fft_window.show = refresh
 
     def _link_box(self, parent):
-        """A collapsed 'Linked data' toggle: panels that plot the same data."""
-        def text(is_open):
-            others = self._link_partners(self.selected)
-            used = f": panel{'s' if len(others) > 1 else ''} {self._numbers(others)}" \
-                if others and not is_open else ""
-            return f"Linked data{used}"
-
-        body = self._collapsible(parent, (10, 0), text, start_open=True)
+        """Linked data: panels that plot the same data. No toggle, as it has
+        the Linking tab to itself."""
+        body = ttk.Frame(parent)
+        body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
         status = ttk.Label(body, foreground=theme.MUTED, wraplength=230)
         status.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(body)
@@ -610,15 +606,33 @@ class Plotter(tk.Tk):
         ttk.Button(row, text="Link to panel...", command=self.link_panels).pack(side=tk.LEFT)
         unlink = ttk.Button(row, text="Unlink panel", command=self.unlink_panel)
         unlink.pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Label(body, text="shares data and colours only",
-                  foreground=theme.HINT).pack(anchor=tk.W)
+        # What this panel shares with the group, in two columns: the data
+        # input on the left, how it's processed and drawn on the right.
+        ttk.Label(body, text="Sync").pack(anchor=tk.W, pady=(12, 2))
+        boxes = ttk.Frame(body)
+        boxes.pack(anchor=tk.W, fill=tk.X)
+        self.sync_vars = {}
+        names = {"run": "Dataset", "x": "X axis", "y": "Y axis", "colour": "Colour",
+                 "smoothing": "Smoothing", "background": "Background", "style": "Line style"}
+        places = {"run": (0, 0), "x": (1, 0), "y": (2, 0), "colour": (3, 0),
+                  "smoothing": (0, 1), "background": (1, 1), "style": (2, 1)}
+        for key in SYNC:
+            var = self.sync_vars[key] = tk.BooleanVar()
+            row, col = places[key]
+            ttk.Checkbutton(boxes, text=names[key], variable=var,
+                            command=lambda key=key: self.set_sync(key)).grid(
+                row=row, column=col, sticky=tk.W, padx=(0, 16), pady=1)
+        ttk.Label(body, text="syncs between panels that both tick it",
+                  foreground=theme.HINT).pack(anchor=tk.W, pady=(2, 0))
 
         def refresh():
-            body.refresh()
             others = self._link_partners(self.selected)
-            status["text"] = (f"Same data as panel{'s' if len(others) > 1 else ''} "
+            status["text"] = (f"Linked to panel{'s' if len(others) > 1 else ''} "
                               f"{self._numbers(others)}" if others else "Not linked")
             unlink.state(["!disabled" if others else "disabled"])
+            synced = self._sync_panel(self.selected).synced
+            for key, var in self.sync_vars.items():
+                var.set(key in synced)
         self.link_status = refresh
 
     def _folder_row(self, parent, label, key):
@@ -1334,19 +1348,44 @@ class Plotter(tk.Tk):
             if p.lines is lines:
                 clear_ranges(p, axes)
 
+    def _sync_panel(self, cell):
+        """The panel whose `sync` applies to `cell`'s lines: an FFT panel shares
+        its data panel's lines, so it uses that panel's."""
+        p = self.panels[cell]
+        return self.panels[p.source] if p.source is not None else p
+
     def _sync_inputs(self, cell):
-        """Give the linked panels' lines the same data input and colour as
-        `cell`'s, line by line."""
+        """Copy `cell`'s lines' settings to the linked panels' lines, line by
+        line: each SYNC key that both panels share."""
         source, *others = self._group_lists(cell)
+        shares = self._sync_panel(cell).synced
         for lines in others:
+            owner = next(p for p in self.panels.values() if p.lines is lines and p.source is None)
+            keys = [k for k in SYNC if k in shares & owner.synced]
             for mine, theirs in zip(lines, source):
-                if (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
-                    mine.span = mine.fit_from = mine.fit_to = None  # in the old x
-                    self._clear_ranges(lines, "x")
-                if (mine.y, mine.y_fn) != (theirs.y, theirs.y_fn):
+                old_x, old_y = (mine.x, mine.x_fn), (mine.y, mine.y_fn, mine.background)
+                for key in keys:
+                    for attr in SYNC[key]:
+                        # A value in the plotted x only means the same with the same x.
+                        if attr in X_UNITS and (mine.x, mine.x_fn) != (theirs.x, theirs.x_fn):
+                            continue
+                        setattr(mine, attr, getattr(theirs, attr))
+                    if key == "x" and (mine.x, mine.x_fn) != old_x:
+                        # In the old x; x comes before the keys that could set them.
+                        mine.span = mine.fit_from = mine.fit_to = None
+                        self._clear_ranges(lines, "x")
+                new_y = (mine.y, mine.y_fn, mine.background)
+                if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
                     self._clear_ranges(lines, "y")
-                for attr in LINKED:
-                    setattr(mine, attr, getattr(theirs, attr))
+
+    def set_sync(self, key):
+        """Tick or untick `key` in the selected panel's sync. Ticking it sends
+        the selected panel's setting to the others that share it, as an edit would."""
+        p = self._sync_panel(self.selected)
+        synced = p.synced | {key} if self.sync_vars[key].get() else p.synced - {key}
+        p.sync = " ".join(k for k in SYNC if k in synced)
+        self._sync_inputs(self.selected)
+        self._redraw_selected("x", "x")
 
     def _tidy_link_groups(self):
         """Drop groups left with one panel (after an unlink or a smaller layout)."""
@@ -1371,8 +1410,8 @@ class Plotter(tk.Tk):
     def _link(self, cell, target):
         """Link `cell` (and any group it's in) to `target`'s data.
 
-        `cell`'s side takes `target`'s data input, colours and number of
-        lines; each keeps its own smoothing and background."""
+        `cell`'s side takes `target`'s number of lines, and whatever both
+        sides sync (by default the data input and colours)."""
         self.stop_picking()
         if target == cell:
             self._say("Click a different panel to link to.", error=True)
@@ -1662,6 +1701,7 @@ class Plotter(tk.Tk):
                 l.label = label
         for name, value in settings.items():
             setattr(l, name, value)
+        self._sync_inputs(self.selected)  # for panels that sync the style
         # Style doesn't move the data, so keep any zoom.
         self._redraw_selected(keep="xy", merge=merge)
         if problem:  # after the redraw, which clears the status

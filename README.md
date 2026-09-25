@@ -148,17 +148,24 @@ in red under the Y axis until it's fixed or another line is selected.
   peaks), F max, and **Unlink**, which turns it back into an ordinary panel
   with its own copies of the lines. Its title gives the frequency resolution,
   ΔF = 1 / (x range).
-- **Linked data**: **Link to panel...** then click another panel, and the
-  selected panel plots the same data as it: the same dataset, X and Y columns
-  and Function boxes, in the same colours, line by line (it takes that
-  panel's number of lines, asking first if some of its own would go). From
-  then on changing any of those in one linked panel, adding or removing a
-  line, or ⇅ does the same in all of them. Smoothing, background and axis
-  ranges stay each panel's own, so e.g. one panel shows the raw data, a linked one the same
-  data with the background subtracted, and another that smoothed. Any number
-  of panels can join (linking two groups merges them); the selected panel's
-  linked partners get a dashed frame. **Unlink panel** takes the selected one
-  out, keeping what it plots.
+- **Linked data** (Linking tab): **Link to panel...** then click another
+  panel, and the two share their lines' settings, line by line (the selected
+  panel takes the other's number of lines, asking first if some of its own
+  would go). From then on adding or removing a line in one does the same in
+  all of them, and changing a synced setting does too. **Sync** chooses, per
+  panel, what it shares: **Dataset**, **X axis** and **Y axis** (each with
+  its Function box) and **Colour** are ticked to start with; **Smoothing**,
+  **Background** and **Line style** (line, width and marker) aren't. A
+  setting syncs between two panels only if both tick it, so e.g. one panel
+  shows the raw data, a linked one the same data with the background
+  subtracted, and another that smoothed; or untick Y axis to plot another
+  column against the same x. Ticking a box sends the selected panel's
+  setting to the others that tick it. Fit ranges and x-unit windows only
+  sync between panels with the same x. An FFT panel uses its data panel's
+  ticks. Axis ranges and zoom stay each panel's own. Any number of panels
+  can join (linking two groups merges them); the selected panel's linked
+  partners get a dashed frame. **Unlink panel** takes the selected one out,
+  keeping what it plots.
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
