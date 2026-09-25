@@ -4,7 +4,8 @@ from dataclasses import fields
 import math
 
 from goose_plotter import background, smoothing, spectrum
-from goose_plotter.model import LEGENDS, MARKERS, STYLES, Line, Panel
+from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, STYLES, Line,
+                                 Panel)
 from goose_plotter.widgets import MAX_GRID
 
 VERSION = 1
@@ -16,7 +17,9 @@ SKIP = {"shown", "error", "lines", "selected", "source"}
 # Per class: a Line's window is smoothing's, in points; a Panel's is the FFT's.
 CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                   "style": STYLES, "marker": MARKERS},
-           Panel: {"legend": LEGENDS, "window": spectrum.WINDOWS, "pad": spectrum.PADDING}}
+           Panel: {"legend": LEGENDS, "grid": GRIDS, "grid_axis": GRID_AXES,
+                   "grid_style": GRID_STYLES, "window": spectrum.WINDOWS,
+                   "pad": spectrum.PADDING}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.

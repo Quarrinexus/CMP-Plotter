@@ -137,7 +137,10 @@ in red under the Y axis until it's fixed or another line is selected.
   like `$B$ (T)` works); they stay when the data changes, so update them
   with it. **Legend**: Auto shows one for two or more lines, Off hides it,
   and a position (a corner, or Outside right of the panel) shows it there
-  even for one line.
+  even for one line. **Grid**: **show** Off, Major (the default) or Major +
+  minor (fainter lines between the major ones), on **axis** Both, x only or
+  y only, in **style** Solid, Dashed or Dotted. Legend and Grid apply as you
+  click.
 - **FFT**: **FFT to new panel** adds a row with the selected panel's spectrum
   under it; **FFT to existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The two panels are locked

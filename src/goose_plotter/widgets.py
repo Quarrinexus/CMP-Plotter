@@ -9,7 +9,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from goose_plotter import theme
-from goose_plotter.model import AUTO_MARKER_SIZE, LEGENDS, MARKERS, RANGES, STYLES
+from goose_plotter.model import (AUTO_MARKER_SIZE, GRID_AXES, GRID_STYLES, GRIDS, LEGENDS,
+                                 MARKERS, RANGES, STYLES)
 
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels
@@ -359,9 +360,13 @@ class LineStylePopup(tk.Toplevel):
 
 
 class AxesPopup(tk.Toplevel):
-    """The selected panel's ranges, title, axis labels and legend, in their own
-    window. Enter in a box, or a legend button, calls `on_apply()`, which reads
-    `values()`; Use current view calls `on_use_view()`."""
+    """The selected panel's ranges, title, axis labels, legend and grid, in their
+    own window. Enter in a box, or a legend or grid button, calls `on_apply()`,
+    which reads `values()`; Use current view calls `on_use_view()`."""
+
+    # Panel field -> its buttons' texts, for the Grid rows.
+    GRID_ROWS = (("grid", "show", GRIDS), ("grid_axis", "axis", GRID_AXES),
+                 ("grid_style", "style", GRID_STYLES))
 
     TEXTS = (("title", "Title"), ("x_label", "x label"), ("y_label", "y label"))
 
@@ -372,6 +377,7 @@ class AxesPopup(tk.Toplevel):
         self.ranges = {name: tk.StringVar() for name in RANGES}
         self.texts = {name: tk.StringVar() for name, _ in self.TEXTS}
         self.legend = tk.StringVar()
+        self.choices = {name: tk.StringVar() for name, _, _ in self.GRID_ROWS}
         body = ttk.Frame(self, padding=12)
         body.pack(fill=tk.BOTH, expand=True)
 
@@ -413,6 +419,16 @@ class AxesPopup(tk.Toplevel):
                 ttk.Radiobutton(row, text=LEGENDS[key], variable=self.legend, value=key,
                                 style="Toolbutton", command=on_apply).pack(
                     side=tk.LEFT, padx=(0, 4))
+
+        ttk.Label(body, text="Grid", foreground=theme.MUTED).pack(anchor=tk.W, pady=(10, 0))
+        for name, label, texts in self.GRID_ROWS:
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(2, 0))
+            ttk.Label(row, text=label, width=7).pack(side=tk.LEFT)
+            for key, text in texts.items():
+                ttk.Radiobutton(row, text=text, variable=self.choices[name], value=key,
+                                style="Toolbutton", command=on_apply).pack(
+                    side=tk.LEFT, padx=(0, 4))
         ttk.Label(body, text="Enter in a box applies", foreground=theme.HINT).pack(
             anchor=tk.W, pady=(10, 0))
         ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(6, 0))
@@ -422,9 +438,11 @@ class AxesPopup(tk.Toplevel):
         self.bind("<Escape>", lambda _: self.destroy())
 
     def values(self):
-        """The boxes as typed ({name: text}) and the legend's key."""
+        """The boxes as typed ({name: text}), and the buttons' keys ({name: key}
+        for the legend and grid)."""
         typed = {name: var.get() for name, var in (self.ranges | self.texts).items()}
-        return typed, self.legend.get()
+        chosen = {name: var.get() for name, var in self.choices.items()}
+        return typed, {"legend": self.legend.get()} | chosen
 
     def set_view(self, xlim, ylim):
         for axis, (low, high) in (("x", xlim), ("y", ylim)):
@@ -440,3 +458,5 @@ class AxesPopup(tk.Toplevel):
         for name, var in self.texts.items():
             var.set(getattr(panel, name))
         self.legend.set(panel.legend)
+        for name, var in self.choices.items():
+            var.set(getattr(panel, name))

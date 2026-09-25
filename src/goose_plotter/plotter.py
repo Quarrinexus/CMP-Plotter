@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageTk
 from goose_plotter.axis_functions import apply_function, is_identity, rename
 from goose_plotter import background, session, smoothing, spectrum, theme
 from goose_plotter.columns import label, lookup, with_unit, without_unit
-from goose_plotter.model import (LEGENDS, RANGES, SYNC, X_UNITS, Panel, clear_ranges,
-                               legend_labels, line_colours, shared)
+from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC, X_UNITS,
+                               Panel, clear_ranges, legend_labels, line_colours, shared)
 from goose_plotter.profile import load_profile, save_format
 from goose_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -1039,7 +1039,14 @@ class Plotter(tk.Tk):
                 if np.isfinite(resolutions[0]):  # the frequency resolution
                     heading += f" · ΔF {resolutions[0]:.3g}"
             ax.set_title(p.title or heading)
-            ax.grid(True, lw=0.4, alpha=0.8)
+            if p.grid != "off":
+                if p.grid == "minor":  # fainter, between the major lines
+                    for axis in ("x", "y") if p.grid_axis == "both" else (p.grid_axis,):
+                        getattr(ax, f"{axis}axis").minorticks_on()  # only where there's grid
+                    ax.grid(True, which="minor", axis=p.grid_axis, ls=p.grid_style,
+                            lw=0.3, alpha=0.4)
+                ax.grid(True, which="major", axis=p.grid_axis, ls=p.grid_style,
+                        lw=0.4, alpha=0.8)
             if p.legend != "off" and (p.legend != "auto" or len(drawn) > 1):
                 for artist, l, text in zip(ax.lines, drawn, legend_labels(drawn)):
                     artist.set_label(l.label or text)
@@ -1311,7 +1318,7 @@ class Plotter(tk.Tk):
         if not (self.axes_popup and self.axes_popup.winfo_exists()):
             return
         p = self.panel
-        typed, legend = self.axes_popup.values()
+        typed, chosen = self.axes_popup.values()
         for name in RANGES:
             try:
                 value = float(typed[name]) if typed[name].strip() else None
@@ -1327,7 +1334,10 @@ class Plotter(tk.Tk):
                 problem = f"Can't draw that {name.replace('_', ' ')}: {plain(why)}"
             else:
                 setattr(p, name, text)
-        p.legend = legend if legend in LEGENDS else p.legend
+        for name, keys in (("legend", LEGENDS), ("grid", GRIDS), ("grid_axis", GRID_AXES),
+                           ("grid_style", GRID_STYLES)):
+            if chosen[name] in keys:
+                setattr(p, name, chosen[name])
         for axis in "xy":
             low, high = getattr(p, f"{axis}_min"), getattr(p, f"{axis}_max")
             if low is not None and high is not None and low == high:

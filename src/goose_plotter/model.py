@@ -119,6 +119,9 @@ class Panel:
     x_label: str = ""
     y_label: str = ""
     legend: str = "auto"  # a key of LEGENDS
+    grid: str = "major"  # a key of GRIDS
+    grid_axis: str = "both"  # a key of GRID_AXES
+    grid_style: str = "-"  # a key of GRID_STYLES
 
     @property
     def line(self):
@@ -148,6 +151,12 @@ RANGES = ("x_min", "x_max", "y_min", "y_max")
 LEGENDS = {"auto": "Auto", "off": "Off", "upper right": "Top right",
            "upper left": "Top left", "lower left": "Bottom left",
            "lower right": "Bottom right", "outside": "Outside right"}
+
+
+# Grid lines -> the text on their buttons. "minor" draws the major lines too.
+GRIDS = {"off": "Off", "major": "Major", "minor": "Major + minor"}
+GRID_AXES = {"both": "Both", "x": "x only", "y": "y only"}
+GRID_STYLES = {"-": "Solid", "--": "Dashed", ":": "Dotted"}
 
 
 def clear_ranges(panel, axes="xy"):
