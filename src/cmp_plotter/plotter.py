@@ -181,23 +181,23 @@ class Plotter(tk.Tk):
         axes.pack(anchor=tk.W, fill=tk.X)
         axis_boxes = ttk.Frame(axes)
         axis_boxes.pack(side=tk.LEFT)
-        self.x = self._combo(axis_boxes, "X axis", [])
+        # Narrower than Dataset, to leave room for the two buttons beside them.
+        self.x = self._combo(axis_boxes, "X axis", [], width=21)
         self.x_fn = self._function_box(axis_boxes, "x")
-        self.y = self._combo(axis_boxes, "Y axis", [])
+        self.y = self._combo(axis_boxes, "Y axis", [], width=21)
         self.y_fn = self._function_box(axis_boxes, "y")
         # Beside the axis boxes: swap x and y, and the axes editor.
         axis_buttons = ttk.Frame(axes)
         axis_buttons.pack(side=tk.LEFT, padx=(6, 0))
         self.swap_icon, self.axes_icon = swap_icon(), axes_icon()
-        ttk.Button(axis_buttons, image=self.swap_icon, command=self.swap).pack()
         ttk.Button(axis_buttons, image=self.axes_icon, command=self.open_axes).pack(
-            pady=(6, 0))
+            side=tk.LEFT)
+        ttk.Button(axis_buttons, image=self.swap_icon, command=self.swap).pack(
+            side=tk.LEFT, padx=(4, 0))
         # Smoothing's toggle adds the 10 px below.
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
-        # Above: the selected line. Below: the selected panel.
-        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._fft_box(controls)
         self._link_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
@@ -314,11 +314,11 @@ class Plotter(tk.Tk):
         up = event.num == 4 or getattr(event, "delta", 0) > 0
         self.side.yview_scroll(-1 if up else 1, "units")
 
-    def _combo(self, parent, label, values, default="", **kwargs):
+    def _combo(self, parent, label, values, default="", width=24, **kwargs):
         ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(8, 2))
         var = tk.StringVar(value=default)
         box = ttk.Combobox(parent, textvariable=var, values=values,
-                           state="readonly", width=24, **kwargs)
+                           state="readonly", width=width, **kwargs)
         box.pack(anchor=tk.W)
         box.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
         var.box = box

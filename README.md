@@ -117,7 +117,7 @@ keeps them.
   legend**, also shown in the Lines list (blank: automatic; mathtext works;
   Enter applies). Everything else applies as you click, keeps the zoom, and
   follows whichever line is selected.
-- **Axes editor**: the small plot button under ⇅ opens it, for the selected
+- **Axes editor**: the small plot button left of ⇅ opens it, for the selected
   panel (it follows the selection). Type an x or y range (**from** /
   **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
   function; leave an end blank to let it follow the data. **Use current
