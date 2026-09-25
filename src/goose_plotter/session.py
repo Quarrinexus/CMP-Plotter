@@ -4,8 +4,8 @@ from dataclasses import fields
 import math
 
 from goose_plotter import background, smoothing, spectrum
-from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, STYLES, Line,
-                                 Panel)
+from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, OPERATIONS,
+                                 STYLES, Line, Panel)
 from goose_plotter.widgets import MAX_GRID
 
 VERSION = 1
@@ -18,12 +18,13 @@ SKIP = {"shown", "error", "lines", "selected", "source"}
 CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                   "style": STYLES, "marker": MARKERS},
            Panel: {"legend": LEGENDS, "grid": GRIDS, "grid_axis": GRID_AXES,
-                   "grid_style": GRID_STYLES, "window": spectrum.WINDOWS,
+                   "grid_style": GRID_STYLES, "operation": OPERATIONS, "window": spectrum.WINDOWS,
                    "pad": spectrum.PADDING}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.
-POSITIVE = {Line: {"width", "marker_size", "window", "span"}, Panel: {"f_max"}}
+POSITIVE = {Line: {"width", "marker_size", "window", "span"},
+            Panel: {"f_max", "derivative_window"}}
 
 
 def cell_key(cell):
@@ -40,8 +41,9 @@ def _plain(obj):
 
 
 def dump(panels, rows, cols):
-    """The layout and every panel's settings. An FFT panel stores its source
-    cell instead of lines: on loading it shares its data panel's list again."""
+    """The layout and every panel's settings. A derived panel (an FFT or a
+    derivative) stores its source cell instead of lines: on loading it shares
+    its data panel's list again."""
     out = {}
     for cell, p in sorted(panels.items()):
         data = _plain(p)
@@ -95,7 +97,7 @@ def load(state):
         raise ValueError(f"a {rows} x {cols} layout is bigger than the plotter allows")
     grid = [(r, c) for r in range(rows) for c in range(cols)]
     panels = {}
-    for cell in grid:  # data panels first: FFT panels need their lists
+    for cell in grid:  # data panels first: derived panels need their lists
         data = saved.get(cell)
         if data is None or (isinstance(data, dict) and "source" in data):
             continue

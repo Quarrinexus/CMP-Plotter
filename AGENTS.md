@@ -32,7 +32,8 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `model.py` | `Line` and `Panel`, colours, legend text, shared axis labels |
 | `smoothing.py` | moving average, median, Savitzky–Golay; windows in points or x |
 | `background.py` | polynomial fit in x, shown or subtracted |
-| `spectrum.py` | FFT of a line against its plotted x, for FFT panels |
+| `spectrum.py` | FFT of a line against its plotted x, for FFT panels; `even_grid`, the binning it shares |
+| `derivative.py` | first and second derivatives on `even_grid`, for derivative panels |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
 | `widgets.py` | the line and axes editors, colour picker, layout grid, overwrite question |
@@ -46,11 +47,12 @@ mirror. If that folder isn't around this repo, use whatever data folder
 1. read the columns, apply the axis functions (`_axis`)
 2. background (`background.apply`): fit on the unsmoothed data
 3. smoothing (`smoothing.smooth`), on what's left
-4. in an FFT panel only, `spectrum.spectrum` of that against x
+4. in a derived panel only, `spectrum.spectrum` or `derivative.derivative` of
+   that against x
 5. one `ax.plot` call
 
 `_line_data` caches steps 1–3 per line, keyed on the line's settings, so a
-data panel and its FFT panels do the work once; `_reload_folder` clears it.
+data panel and its derived panels do the work once; `_reload_folder` clears it.
 
 Keep that order. Things that depend on it:
 
@@ -75,22 +77,31 @@ Keep that order. Things that depend on it:
   `_show_error` shows the selected line's under the axes boxes; it runs from
   `_load_controls`, which every redraw path ends in, so there's no popup.
 
-## FFT panels are locked to a data panel
+## Derived panels are locked to a data panel
 
-A `Panel` with a `source` is an FFT panel. Its `lines` *is* the source
-panel's list, the same object, which is what keeps the two in sync: edits,
+A `Panel` with a `source` is a derived panel: `Panel.operation` says which,
+"fft" (the default, so sessions from before derivatives load as FFTs), "d1"
+or "d2". Most code only asks whether there's a source; check `operation`
+only where FFTs and derivatives differ (drawing, the Operations boxes,
+`_default_name`). Its `lines` *is* the source panel's list, the same object, which is what keeps the two in sync: edits,
 colours, added and removed lines all show in both with no copying. So:
 
 - Redraw with `_redraw_selected`, which redraws every panel in
-  `_linked(cell)`, data panel first: an FFT panel only draws lines whose
+  `_linked(cell)`, data panel first: a derived panel only draws lines whose
   `shown` its data panel set, and leaves `shown` and `error` alone.
-  `_build_axes` likewise draws data panels before FFT panels.
+  `_build_axes` likewise draws data panels before derived panels.
 - Selecting a line goes through `_set_selected_line`, so the linked panels
   select it too.
 - To break the link, use `_unlink`, which gives the panel copies of the lines.
   `set_layout` does that when a source panel is removed, and `Panel.copy`
   always makes an independent data panel.
-- There are no FFTs of FFT panels, and no fit-range picking on them.
+- Derived panels are only made from data panels (no FFT of a derivative),
+  and there's no fit-range picking on them. Putting one on a panel already
+  derived from the same data just changes its `operation`.
+- `spectrum.even_grid` bins at bin centres for FFTs; derivatives pass
+  `at_mean_x`, since the half-step error there becomes noise once
+  differentiated. Keep the FFT's binning as it is unless you mean to change
+  its output.
 
 ## Linked data is a different link
 
@@ -195,7 +206,7 @@ app.fig.savefig("/some/scratch/dir/check.png")
 app.destroy()
 ```
 
-`askyesno` comes up when making FFT panels or linking. Wrap runs in
+`askyesno` comes up when making FFT or derivative panels or linking. Wrap runs in
 `timeout`: an unpatched popup waits forever. Don't call
 `choose_folder`, which rewrites the user's settings file.
 

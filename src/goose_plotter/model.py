@@ -99,14 +99,17 @@ class Line:
 class Panel:
     """One subplot: its lines and which of them the controls edit.
 
-    An FFT panel has a `source`, the cell of a data panel, and shares that
-    panel's `lines` list itself, so the two stay locked together."""
+    A derived panel (an FFT or a derivative, by `operation`) has a `source`,
+    the cell of a data panel, and shares that panel's `lines` list itself, so
+    the two stay locked together."""
     lines: list = field(default_factory=lambda: [Line()])
     selected: int = 0
     source: tuple | None = None
+    operation: str = "fft"  # with a source: a key of OPERATIONS
     window: str = "hann"  # FFT window, a key of spectrum.WINDOWS
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
+    derivative_window: int = 51  # derivative panels: grid points per fit, odd
     link_group: int | None = None  # panels with the same number plot the same data
     sync: str = SYNC_DEFAULT  # the SYNC keys it shares with its group, space-separated
     # Typed axis ranges, in the plotted units; None: that end is automatic.
@@ -152,6 +155,9 @@ LEGENDS = {"auto": "Auto", "off": "Off", "upper right": "Top right",
            "upper left": "Top left", "lower left": "Bottom left",
            "lower right": "Bottom right", "outside": "Outside right"}
 
+
+# What a panel with a source draws of its data panel's lines: the FFT, or a derivative.
+OPERATIONS = ("fft", "d1", "d2")
 
 # Grid lines -> the text on their buttons. "minor" draws the major lines too.
 GRIDS = {"off": "Off", "major": "Major", "minor": "Major + minor"}

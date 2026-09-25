@@ -86,8 +86,8 @@ keeps them.
 
 The Lines list, Dataset and axes are always at the top of the controls
 column. The rest is in four tabs under them: **Process** (Smoothing,
-Background), **Spectrum** (FFT), **Linking** (Linked data) and **Files** (folders, Data
-format, sessions). If the selected line can't be drawn (a bad function, a
+Background), **Operations** (FFT, Derivative), **Linking** (Linked data) and
+**Files** (folders, Data format, sessions); their sections start open. If the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
 
@@ -141,7 +141,7 @@ in red under the Y axis until it's fixed or another line is selected.
   minor (fainter lines between the major ones), on **axis** Both, x only or
   y only, in **style** Solid, Dashed or Dotted. Legend and Grid apply as you
   click.
-- **FFT**: **FFT to new panel** adds a row with the selected panel's spectrum
+- **FFT** (Operations tab): **FFT to new panel** adds a row with the selected panel's spectrum
   under it; **FFT to existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The two panels are locked
   together: they share the same lines, so changing a line's axes, fit,
@@ -153,6 +153,17 @@ in red under the Y axis until it's fixed or another line is selected.
   peaks), F max, and **Unlink**, which turns it back into an ordinary panel
   with its own copies of the lines. Its title gives the frequency resolution,
   ΔF = 1 / (x range).
+- **Derivative** (Operations tab): works like FFT. Choose the **Order**
+  (First or Second), then **Derivative to new panel** or **Derivative to
+  existing panel...** (clicking an FFT panel of the same data turns it into
+  the derivative). The panel shows dy/dx or d²y/dx² of each line as plotted,
+  against its plotted x, locked to its data panel the same way. As the rows
+  jitter and double back in x, each line is first averaged onto an even grid
+  in x, and each point's derivative is read off a Savitzky–Golay fit over
+  **Window** grid points around it (odd; 51 to start). Select the derivative
+  panel to change its order or window, or **Unlink** it. Derivatives magnify
+  noise, the second much more than the first, so widen the window until
+  the curve is steady; a jump in the data shows as a spike.
 - **Linked data** (Linking tab): **Link to panel...** then click another
   panel, and the two share their lines' settings, line by line (the selected
   panel takes the other's number of lines, asking first if some of its own
@@ -166,7 +177,7 @@ in red under the Y axis until it's fixed or another line is selected.
   subtracted, and another that smoothed; or untick Y axis to plot another
   column against the same x. Ticking a box sends the selected panel's
   setting to the others that tick it. Fit ranges and x-unit windows only
-  sync between panels with the same x. An FFT panel uses its data panel's
+  sync between panels with the same x. An FFT or derivative panel uses its data panel's
   ticks. Axis ranges and zoom stay each panel's own. Any number of panels
   can join (linking two groups merges them); the selected panel's linked
   partners get a dashed frame. **Unlink panel** takes the selected one out,
@@ -181,7 +192,7 @@ in red under the Y axis until it's fixed or another line is selected.
   panels after it, across then down, move back one place, and the grid loses
   the row or column that leaves empty (a 3 x 1 stack becomes 2 x 1); in a
   grid of both rows and columns the last cell gets an empty panel instead.
-  An FFT panel of the deleted one keeps its lines, unlinked. Ctrl+Z brings
+  An FFT or derivative panel of the deleted one keeps its lines, unlinked. Ctrl+Z brings
   it back. There's always at least one panel.
 - **⇅** (beside the X and Y axis boxes): swaps x and y, functions included, for
   every line in the panel.
@@ -193,7 +204,7 @@ in red under the Y axis until it's fixed or another line is selected.
   the `"overwrite_without_asking"` line from `settings.json`.
 - **Open session... / Save session...** (Files tab): a session
   is a `.json` file holding the layout and every panel and line, with its
-  settings, FFT panels, links, ranges, labels and styles, plus the data
+  settings, FFT and derivative panels, links, ranges, labels and styles, plus the data
   folder and a typed Save as name. Opening one switches to its data folder if
   that's still there. The data itself isn't in it, only which files to read.
 
