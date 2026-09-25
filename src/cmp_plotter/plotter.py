@@ -139,15 +139,6 @@ class Plotter(tk.Tk):
         self.side.bind("<Configure>", self._fit_side)
         for sequence in ("<Button-4>", "<Button-5>", "<MouseWheel>"):
             self.bind_all(sequence, self._scroll_side, add="+")
-        # Open at start only if a folder still needs choosing.
-        folders = self._collapsible(
-            controls, (0, 0), lambda _: "Folders",
-            start_open=not (self.settings.get("data_dir") and self.settings.get("output_dir")))
-        self.data_label = self._folder_row(folders, "Data folder", "data_dir")
-        self.output_label = self._folder_row(folders, "Output folder", "output_dir")
-        ttk.Button(folders, text="Data format...", command=self.edit_format).pack(
-            anchor=tk.W, pady=(0, 2))
-        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
         ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(0, 2))
         lines = ttk.Frame(controls)
         lines.pack(anchor=tk.W, fill=tk.X)
@@ -194,12 +185,44 @@ class Plotter(tk.Tk):
             side=tk.LEFT)
         ttk.Button(axis_buttons, image=self.swap_icon, command=self.swap).pack(
             side=tk.LEFT, padx=(4, 0))
-        # Smoothing's toggle adds the 10 px below.
-        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
-        self._smoothing_box(controls)
-        self._background_box(controls)
-        self._fft_box(controls)
-        self._link_box(controls)
+        # Why the selected line isn't drawn; shown only when it isn't.
+        self.error_label = ttk.Label(controls, foreground=theme.ERROR, wraplength=300)
+        self.axes_block = axes
+
+        # The rest is in tabs, one shown at a time, so the column stays short.
+        # Not a ttk.Notebook: that is as tall as its tallest tab.
+        ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
+        strip = ttk.Frame(controls)
+        strip.pack(anchor=tk.W, fill=tk.X)
+        self.tab = tk.StringVar()
+        self.tabs = {}
+        for name in ("Line", "Panel", "Files"):
+            ttk.Radiobutton(strip, text=name, value=name, variable=self.tab,
+                            style="Toolbutton", command=self._show_tab).pack(
+                side=tk.LEFT, padx=(0, 4))
+            self.tabs[name] = ttk.Frame(controls)
+        # Smoothing's and FFT's toggles add the 10 px above them.
+        self._smoothing_box(self.tabs["Line"])
+        self._background_box(self.tabs["Line"])
+        self._fft_box(self.tabs["Panel"])
+        self._link_box(self.tabs["Panel"])
+        files = self.tabs["Files"]
+        files.configure(padding=(0, 10, 0, 0))  # as the other tabs' toggles have
+        self.data_label = self._folder_row(files, "Data folder", "data_dir")
+        self.output_label = self._folder_row(files, "Output folder", "output_dir")
+        ttk.Button(files, text="Data format...", command=self.edit_format).pack(
+            anchor=tk.W, pady=(0, 2))
+        ttk.Label(files, text="Session").pack(anchor=tk.W, pady=(12, 2))
+        buttons = ttk.Frame(files)
+        buttons.pack(anchor=tk.W)
+        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
+            side=tk.LEFT)
+        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
+            side=tk.LEFT, padx=(6, 0))
+        # Files first only if a folder still needs choosing.
+        folders_set = self.settings.get("data_dir") and self.settings.get("output_dir")
+        self.tab.set("Line" if folders_set else "Files")
+        self._show_tab()
         self.bind("<Escape>", lambda _: self.stop_picking())
         self._bind_keys()
 
@@ -218,12 +241,6 @@ class Plotter(tk.Tk):
         buttons.pack(anchor=tk.W, pady=(8, 0))
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
         ttk.Button(buttons, text="Save figure", command=self.save).pack(
-            side=tk.LEFT, padx=(6, 0))
-        buttons = ttk.Frame(save)
-        buttons.pack(anchor=tk.W, pady=(6, 0))
-        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
-            side=tk.LEFT)
-        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
             side=tk.LEFT, padx=(6, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
@@ -306,6 +323,26 @@ class Plotter(tk.Tk):
         elif self.side_scroll.winfo_manager():
             self.side_scroll.pack_forget()
             self.side.yview_moveto(0)
+
+    def _show_tab(self):
+        """Show the chosen tab's frame and hide the others."""
+        for name, frame in self.tabs.items():
+            if name == self.tab.get():
+                frame.pack(anchor=tk.W, fill=tk.X, pady=(2, 0))
+            else:
+                frame.pack_forget()
+        self.side.yview_moveto(0)
+
+    def _show_error(self):
+        """Show why the selected line isn't drawn, under the axes, if it isn't."""
+        error = self.panel.line.error
+        if error and self.panel.line.run not in self.frames:
+            error = f"Could not load dataset: {error}"
+        self.error_label["text"] = plain(error)
+        if not error:
+            self.error_label.pack_forget()
+        elif not self.error_label.winfo_manager():
+            self.error_label.pack(anchor=tk.W, fill=tk.X, pady=(8, 0), after=self.axes_block)
 
     def _scroll_side(self, event):
         """Mouse wheel over the controls scrolls them, when they're scrollable."""
@@ -703,7 +740,8 @@ class Plotter(tk.Tk):
         self._show_axes()
         self.fft_window.show()
         self.link_status()
-        self._say("")  # errors pop up instead; see apply_controls
+        self._say("")
+        self._show_error()
         self._show_colour()
 
     def _fill_line_list(self):
@@ -765,7 +803,7 @@ class Plotter(tk.Tk):
                 self._load(l)
             except FormatError as err:  # ask how the file is laid out
                 self.edit_format(l.run, f"Couldn't read {l.run}: {err}")
-                if l.run not in self.frames:  # still unreadable; don't pop up again
+                if l.run not in self.frames:  # still unreadable; don't ask again
                     self._redraw_selected()
                     return
             except Exception:  # anything else is reported by the redraw below
@@ -779,12 +817,6 @@ class Plotter(tk.Tk):
                 keep = "x"
             others = "x"  # the other panels redrawn plot the same data as before
         self._redraw_selected(keep, others)
-        if l.error:  # a popup rather than text in the controls, to save room
-            if l.run in self.frames:  # "Function error: ...", "Smoothing error: ", ...
-                title, _, text = l.error.partition(": ")
-            else:
-                title, text = "Could not load dataset", l.error
-            messagebox.showerror(title, plain(text), parent=self)
 
     def _redraw_selected(self, keep="", others="x", merge=False):
         """Redraw the selected panel and those tied to it (its FFT or data panel,

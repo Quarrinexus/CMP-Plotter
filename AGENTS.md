@@ -69,8 +69,9 @@ Keep that order. Things that depend on it:
 - **Settings in x units** (`Line.span`, `fit_from`, `fit_to`) are in the
   *plotted* x, after its function. They're cleared whenever x or its function
   changes, or on ⇅, since a value in T means nothing in 1/B.
-- Errors are stored in `Line.error` as `"<Stage> error: message"`; the text
-  before the first `": "` becomes the popup title.
+- Errors are stored in `Line.error` as `"<Stage> error: message"`.
+  `_show_error` shows the selected line's under the axes boxes; it runs from
+  `_load_controls`, which every redraw path ends in, so there's no popup.
 
 ## FFT panels are locked to a data panel
 
@@ -162,6 +163,9 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
+- **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
+  tab, which would keep the column long. `_show_tab` packs one frame of
+  `self.tabs` and hides the others, so the column fits the tab shown.
 - **The controls column is a scrolling canvas** (`self.side`) with the Save
   area pinned below it; the scrollbar shows only when the column is taller
   than the window.
@@ -173,16 +177,16 @@ then read the state:
 
 ```python
 from cmp_plotter import plotter as P
-P.messagebox.showerror = lambda title, message, parent=None: print(title, message)
+P.messagebox.askyesno = lambda *a, **k: True  # the only popup questions left
 app = P.Plotter()                      # uses ~/.config/cmp-plotter/settings.json
 app.run.set(next(n for n in app.datasets if "005" in n)); app.apply_controls()
 app.smooth.set("Savitzky-Golay"); app.apply_controls()
-print(app.panel.line.shown, app.panel.line.error)
+print(app.panel.line.shown, app.error_label["text"])
 app.fig.savefig("/some/scratch/dir/check.png")
 app.destroy()
 ```
 
-Patch `messagebox.askyesno` too when making FFT panels. Wrap runs in
+`askyesno` comes up when making FFT panels or linking. Wrap runs in
 `timeout`: an unpatched popup waits forever. Don't call
 `choose_folder`, which rewrites the user's settings file.
 

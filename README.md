@@ -83,9 +83,16 @@ keeps them.
 
 ## Use
 
-- **Data / Output folder** (under Folders): choose with Browse...; both are
+The Lines list, Dataset and axes are always at the top of the controls
+column. The rest is in three tabs under them: **Line** (Smoothing,
+Background), **Panel** (FFT, Linked data) and **Files** (folders, Data
+format, sessions). If the selected line can't be drawn (a bad function, a
+file that won't load, a smoothing window that's too big), the reason shows
+in red under the Y axis until it's fixed or another line is selected.
+
+- **Data / Output folder** (Files tab): choose with Browse...; both are
   remembered in `~/.config/cmp-plotter/settings.json` (see Windows above).
-- **Data format...** (under Folders): set the delimiter, column-name line and
+- **Data format...** (Files tab): set the delimiter, column-name line and
   first data line by hand, with a preview. Opens by itself when a file's layout
   can't be detected. Saved for the whole data folder in its profile.
 - **Dataset, X axis, Y axis**: any column against any other, sample columns
@@ -166,7 +173,7 @@ keeps them.
   file of that name is already there, it asks before replacing it. Ticking
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
-- **Open session... / Save session...** (under the save buttons): a session
+- **Open session... / Save session...** (Files tab): a session
   is a `.json` file holding the layout and every panel and line, with its
   settings, FFT panels, links, ranges, labels and styles, plus the data
   folder and a typed Save as name. Opening one switches to its data folder if
