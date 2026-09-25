@@ -1633,12 +1633,9 @@ class Plotter(tk.Tk):
                 return
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            # Sessions from before the rename have the old key.
-            key = next((k for k in (session.KEY, session.OLD_KEY)
-                        if isinstance(data, dict) and k in data), None)
-            if key is None:
+            if not isinstance(data, dict) or session.KEY not in data:
                 raise ValueError("it isn't a GOOSE Plotter session")
-            if not isinstance(data[key], int) or data[key] > session.VERSION:
+            if not isinstance(data[session.KEY], int) or data[session.KEY] > session.VERSION:
                 raise ValueError("it's from a newer version of the plotter")
             session.load(data)  # check it all before changing anything
         except (OSError, ValueError) as err:

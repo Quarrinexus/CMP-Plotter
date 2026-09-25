@@ -4,16 +4,14 @@ import json
 import os
 from pathlib import Path
 
-CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-SETTINGS_FILE = CONFIG / "goose-plotter" / "settings.json"
-OLD_FILE = CONFIG / "cmp-plotter" / "settings.json"  # from when it was CMP Plotter
+SETTINGS_FILE = (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+                 / "goose-plotter" / "settings.json")
 
 
 def load_settings():
     """The saved settings, e.g. {'data_dir': '...', 'output_dir': '...'}, or {}."""
-    path = SETTINGS_FILE if SETTINGS_FILE.exists() or not OLD_FILE.exists() else OLD_FILE
     try:
-        settings = json.loads(path.read_text(encoding="utf-8"))
+        settings = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):  # first run, or a file mangled by hand
         return {}
     return settings if isinstance(settings, dict) else {}

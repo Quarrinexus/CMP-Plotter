@@ -8,8 +8,7 @@ from goose_plotter.model import LEGENDS, MARKERS, STYLES, Line, Panel
 from goose_plotter.widgets import MAX_GRID
 
 VERSION = 1
-# The session file's marker, holding VERSION; OLD_KEY is from when it was CMP Plotter.
-KEY, OLD_KEY = "goose_plotter_session", "cmp_plotter_session"
+KEY = "goose_plotter_session"  # the session file's marker, holding VERSION
 
 # Not saved: what the last draw found, and which line the controls edit.
 SKIP = {"shown", "error", "lines", "selected", "source"}

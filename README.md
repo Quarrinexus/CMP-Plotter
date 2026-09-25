@@ -82,11 +82,6 @@ Your settings (`~/.config/goose-plotter/settings.json`) and each data folder's
 `goose-plotter.json` profile live outside the project folder, so updating
 keeps them.
 
-GOOSE Plotter used to be CMP Plotter. It still reads the old
-`~/.config/cmp-plotter/settings.json` until it saves settings of its own, and
-a data folder's `cmp-plotter.json` profile if there's no `goose-plotter.json`
-beside it; sessions saved under the old name open too.
-
 ## Use
 
 The Lines list, Dataset and axes are always at the top of the controls
