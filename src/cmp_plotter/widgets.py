@@ -1,5 +1,5 @@
 """Tk widgets used by the main window: the line editor with its colour picker,
-the layout grid and the overwrite question."""
+the axes editor, the layout grid and the overwrite question."""
 
 import tkinter as tk
 from tkinter import ttk
@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter import theme
-from cmp_plotter.model import MARKERS, STYLES
+from cmp_plotter.model import LEGENDS, MARKERS, RANGES, STYLES
 
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels
@@ -336,3 +336,87 @@ class LineStylePopup(tk.Toplevel):
                 button["image"] = self.images["marker", key]
         finally:
             self.loading = False
+
+
+class AxesPopup(tk.Toplevel):
+    """The selected panel's ranges, title, axis labels and legend, in their own
+    window. Enter in a box, or a legend button, calls `on_apply()`, which reads
+    `values()`; Use current view calls `on_use_view()`."""
+
+    TEXTS = (("title", "Title"), ("x_label", "x label"), ("y_label", "y label"))
+
+    def __init__(self, parent, on_apply, on_use_view):
+        super().__init__(parent)
+        self.resizable(False, False)
+        self.transient(parent)
+        self.ranges = {name: tk.StringVar() for name in RANGES}
+        self.texts = {name: tk.StringVar() for name, _ in self.TEXTS}
+        self.legend = tk.StringVar()
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(body, text="Range", foreground=theme.MUTED).pack(anchor=tk.W)
+        boxes = []
+        for axis in "xy":
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(2, 0))
+            ttk.Label(row, text=f"{axis} from", width=7).pack(side=tk.LEFT)
+            for end, name in (("from", f"{axis}_min"), ("to", f"{axis}_max")):
+                if end == "to":
+                    ttk.Label(row, text="to").pack(side=tk.LEFT, padx=(6, 6))
+                box = ttk.Entry(row, textvariable=self.ranges[name], width=12)
+                box.pack(side=tk.LEFT)
+                boxes.append(box)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(6, 10))
+        ttk.Button(row, text="Use current view", command=on_use_view).pack(side=tk.LEFT)
+        ttk.Label(row, text="blank: automatic", foreground=theme.HINT).pack(
+            side=tk.LEFT, padx=(8, 0))
+
+        ttk.Label(body, text="Text", foreground=theme.MUTED).pack(anchor=tk.W)
+        for name, label in self.TEXTS:
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(2, 0))
+            ttk.Label(row, text=label, width=7).pack(side=tk.LEFT)
+            box = ttk.Entry(row, textvariable=self.texts[name], width=30)
+            box.pack(side=tk.LEFT)
+            boxes.append(box)
+        ttk.Label(body, text="blank: automatic; $B$ for maths", foreground=theme.HINT).pack(
+            anchor=tk.W, pady=(0, 10))
+
+        ttk.Label(body, text="Legend", foreground=theme.MUTED).pack(anchor=tk.W)
+        keys = list(LEGENDS)
+        for chunk in (keys[:3], keys[3:]):  # two rows, to keep the window narrow
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(2, 0))
+            for key in chunk:
+                ttk.Radiobutton(row, text=LEGENDS[key], variable=self.legend, value=key,
+                                style="Toolbutton", command=on_apply).pack(
+                    side=tk.LEFT, padx=(0, 4))
+        ttk.Label(body, text="Enter in a box applies", foreground=theme.HINT).pack(
+            anchor=tk.W, pady=(10, 0))
+        ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(6, 0))
+        for box in boxes:
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: on_apply())
+        self.bind("<Escape>", lambda _: self.destroy())
+
+    def values(self):
+        """The boxes as typed ({name: text}) and the legend's key."""
+        typed = {name: var.get() for name, var in (self.ranges | self.texts).items()}
+        return typed, self.legend.get()
+
+    def set_view(self, xlim, ylim):
+        for axis, (low, high) in (("x", xlim), ("y", ylim)):
+            self.ranges[f"{axis}_min"].set(f"{low:.6g}")
+            self.ranges[f"{axis}_max"].set(f"{high:.6g}")
+
+    def show(self, panel, number):
+        """Fill the boxes from `panel`, number `number` in the grid."""
+        self.title(f"Axes of panel {number}")
+        for name, var in self.ranges.items():
+            value = getattr(panel, name)
+            var.set("" if value is None else f"{value:.6g}")
+        for name, var in self.texts.items():
+            var.set(getattr(panel, name))
+        self.legend.set(panel.legend)

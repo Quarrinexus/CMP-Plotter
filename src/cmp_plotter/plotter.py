@@ -22,7 +22,7 @@ from cmp_plotter.datasets import (FormatError, describe, detect_format, find_dat
                                   load_dataset, read_lines, run_number)
 from cmp_plotter.format_dialog import FormatDialog
 from cmp_plotter.settings import load_settings, save_settings
-from cmp_plotter.widgets import (MAX_GRID, SELECTED, LayoutPicker, LineStylePopup,
+from cmp_plotter.widgets import (MAX_GRID, SELECTED, AxesPopup, LayoutPicker, LineStylePopup,
                                  OverwriteDialog, line_sample)
 
 PARTNER = "#f0c987"  # frame around the panel locked to the selected one
@@ -76,6 +76,17 @@ def swap_icon(colour=theme.MUTED):
     return ImageTk.PhotoImage(image)
 
 
+def axes_icon(colour=theme.MUTED):
+    """A little plot (axes and a curve) for the button that opens the axes editor."""
+    k = 4  # drawn large and shrunk, for smooth edges
+    image = Image.new("RGBA", (18 * k, 22 * k))
+    draw = ImageDraw.Draw(image)
+    draw.line((2 * k, 3 * k, 2 * k, 19 * k, 17 * k, 19 * k), fill=colour, width=2 * k)
+    curve = [(x * k, (16 - 11 * (x - 4) / 12 + 2.5 * np.sin(x / 1.6)) * k) for x in range(4, 17)]
+    draw.line(curve, fill=colour, width=int(1.6 * k), joint="curve")
+    return ImageTk.PhotoImage(image.resize((18, 22), Image.LANCZOS))
+
+
 class Plotter(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -96,6 +107,7 @@ class Plotter(tk.Tk):
         self.axes = {}  # (row, col) -> matplotlib Axes
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
         self.style_popup = None
+        self.axes_popup = None
         self.picker = None  # the SpanSelector while a fit range is being dragged
         self.fft_pick = None  # source cell while the user clicks a panel for its FFT
         self.link_pick = None  # cell while the user clicks a panel to link its data to
@@ -173,16 +185,19 @@ class Plotter(tk.Tk):
         self.x_fn = self._function_box(axis_boxes, "x")
         self.y = self._combo(axis_boxes, "Y axis", [])
         self.y_fn = self._function_box(axis_boxes, "y")
-        self.swap_icon = swap_icon()
-        ttk.Button(axes, image=self.swap_icon, command=self.swap).pack(
-            side=tk.LEFT, padx=(6, 0))
+        # Beside the axis boxes: swap x and y, and the axes editor.
+        axis_buttons = ttk.Frame(axes)
+        axis_buttons.pack(side=tk.LEFT, padx=(6, 0))
+        self.swap_icon, self.axes_icon = swap_icon(), axes_icon()
+        ttk.Button(axis_buttons, image=self.swap_icon, command=self.swap).pack()
+        ttk.Button(axis_buttons, image=self.axes_icon, command=self.open_axes).pack(
+            pady=(6, 0))
         # Smoothing's toggle adds the 10 px below.
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
         self._smoothing_box(controls)
         self._background_box(controls)
         # Above: the selected line. Below: the selected panel.
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 0))
-        self._axes_box(controls)
         self._fft_box(controls)
         self._link_box(controls)
         self.bind("<Escape>", lambda _: self.stop_picking())
@@ -482,67 +497,6 @@ class Plotter(tk.Tk):
                 box.bind(key, lambda _: self.apply_controls())
         self.fit_mode.show = body.refresh
 
-    def _axes_box(self, parent):
-        """A collapsed 'Axes' toggle: the selected panel's x and y ranges."""
-        self.ranges = {name: tk.StringVar() for name in RANGES}
-        self.texts = {name: tk.StringVar() for name in ("title", "x_label", "y_label")}
-        self.legend = tk.StringVar()
-
-        def text(is_open):
-            p = self.panel
-            used = [what for what, on in (
-                ("range", any(getattr(p, name) is not None for name in RANGES)),
-                ("labels", any(getattr(p, name) for name in self.texts)),
-                ("legend", p.legend != "auto")) if on]
-            return f"Axes: {', '.join(used)}" if used and not is_open else "Axes"
-
-        body = self._collapsible(parent, (10, 0), text)
-        boxes = []
-        for axis in "xy":
-            row = ttk.Frame(body)
-            row.pack(anchor=tk.W, pady=(4, 0))
-            ttk.Label(row, text=f"{axis} from", width=6).pack(side=tk.LEFT)
-            low = ttk.Entry(row, textvariable=self.ranges[f"{axis}_min"], width=9)
-            low.pack(side=tk.LEFT, padx=(4, 4))
-            ttk.Label(row, text="to").pack(side=tk.LEFT)
-            high = ttk.Entry(row, textvariable=self.ranges[f"{axis}_max"], width=9)
-            high.pack(side=tk.LEFT, padx=(4, 0))
-            boxes += [low, high]
-        row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Button(row, text="Use current view", command=self.use_view).pack(side=tk.LEFT)
-        ttk.Label(row, text="blank: automatic", foreground=theme.HINT).pack(
-            side=tk.LEFT, padx=(8, 0))
-        for name, label in (("title", "Title"), ("x_label", "x label"), ("y_label", "y label")):
-            row = ttk.Frame(body)
-            row.pack(anchor=tk.W, pady=(4, 0))
-            ttk.Label(row, text=label, width=6).pack(side=tk.LEFT)
-            box = ttk.Entry(row, textvariable=self.texts[name], width=22)
-            box.pack(side=tk.LEFT, padx=(4, 0))
-            boxes.append(box)
-        row = ttk.Frame(body)
-        row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Legend", width=6).pack(side=tk.LEFT)
-        legend = ttk.Combobox(row, textvariable=self.legend, state="readonly", width=13,
-                              values=list(LEGENDS.values()))
-        legend.pack(side=tk.LEFT, padx=(4, 0))
-        legend.bind("<<ComboboxSelected>>", lambda _: self.apply_axes())
-        ttk.Label(body, text="blank: automatic; $B$ for maths",
-                  foreground=theme.HINT).pack(anchor=tk.W)
-        for box in boxes:
-            for key in ("<Return>", "<KP_Enter>"):
-                box.bind(key, lambda _: self.apply_axes())
-
-        def refresh():
-            body.refresh()
-            for name, var in self.ranges.items():
-                value = getattr(self.panel, name)
-                var.set("" if value is None else f"{value:.6g}")
-            for name, var in self.texts.items():
-                var.set(getattr(self.panel, name))
-            self.legend.set(LEGENDS[self.panel.legend])
-        self.ranges_show = refresh
-
     def _fft_box(self, parent):
         """A collapsed 'FFT' toggle: make an FFT panel of this one, or set one up."""
         self.fft_window, self.fft_pad, self.f_max = tk.StringVar(), tk.StringVar(), tk.StringVar()
@@ -746,7 +700,7 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
-        self.ranges_show()
+        self._show_axes()
         self.fft_window.show()
         self.link_status()
         self._say("")  # errors pop up instead; see apply_controls
@@ -1254,26 +1208,42 @@ class Plotter(tk.Tk):
 
     # --- axes -------------------------------------------------------------
 
+    def _show_axes(self):
+        if self.axes_popup and self.axes_popup.winfo_exists():
+            self.axes_popup.show(self.panel, self._number(self.selected))
+
+    def open_axes(self):
+        """The axes editor for the selected panel: ranges, text and legend."""
+        if self.axes_popup and self.axes_popup.winfo_exists():
+            self.axes_popup.lift()
+        else:
+            self.axes_popup = AxesPopup(self, self.apply_axes, self.use_view)
+            self._undo_keys(self.axes_popup)
+        self._show_axes()
+
     def apply_axes(self):
-        """Copy the Axes box into the selected panel and redraw it."""
+        """Copy the axes editor into the selected panel and redraw it."""
         self.stop_picking()
+        if not (self.axes_popup and self.axes_popup.winfo_exists()):
+            return
         p = self.panel
-        for name, var in self.ranges.items():
+        typed, legend = self.axes_popup.values()
+        for name in RANGES:
             try:
-                value = float(var.get()) if var.get().strip() else None
+                value = float(typed[name]) if typed[name].strip() else None
             except ValueError:  # not a number: keep the old one (shown again below)
                 continue
             if value is None or np.isfinite(value):  # inf or nan would break drawing
                 setattr(p, name, value)
         problem = ""
-        for name, var in self.texts.items():
-            text = var.get().strip()
+        for name, _ in AxesPopup.TEXTS:
+            text = typed[name].strip()
             why = text_problem(text) if text else ""
             if why:  # keep the old text (shown again below)
                 problem = f"Can't draw that {name.replace('_', ' ')}: {plain(why)}"
             else:
                 setattr(p, name, text)
-        p.legend = next(k for k, v in LEGENDS.items() if v == self.legend.get())
+        p.legend = legend if legend in LEGENDS else p.legend
         for axis in "xy":
             low, high = getattr(p, f"{axis}_min"), getattr(p, f"{axis}_max")
             if low is not None and high is not None and low == high:
@@ -1287,9 +1257,7 @@ class Plotter(tk.Tk):
     def use_view(self):
         """Fill the range boxes with what the selected panel shows now, e.g. after zooming."""
         ax = self.axes[self.selected]
-        for axis, (low, high) in (("x", ax.get_xlim()), ("y", ax.get_ylim())):
-            self.ranges[f"{axis}_min"].set(f"{low:.6g}")
-            self.ranges[f"{axis}_max"].set(f"{high:.6g}")
+        self.axes_popup.set_view(ax.get_xlim(), ax.get_ylim())
         self.apply_axes()
 
     # --- linked data ------------------------------------------------------
@@ -1515,6 +1483,11 @@ class Plotter(tk.Tk):
             self.undo_state = self.last_state
         self.last_state, self.merging = now, merge
 
+    def _undo_keys(self, window):
+        """Ctrl+Z in an editor window too: the main window's binding misses it."""
+        for key in ("z", "Z"):
+            window.bind(f"<Control-{key}>", lambda _: self.undo())
+
     def undo(self):
         """Go back one step: the panels as they were before the last change."""
         self.stop_picking()
@@ -1637,8 +1610,7 @@ class Plotter(tk.Tk):
         else:
             self.style_popup = LineStylePopup(self, self.apply_style, self.pick_colour,
                                               self.reset_colour)
-            for key in ("z", "Z"):  # its own window, so the main one's binding misses it
-                self.style_popup.bind(f"<Control-{key}>", lambda _: self.undo())
+            self._undo_keys(self.style_popup)
         self._show_colour()  # fills the editor, in the line's colour
 
     def apply_style(self, merge=False, **settings):

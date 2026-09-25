@@ -117,7 +117,8 @@ keeps them.
   legend**, also shown in the Lines list (blank: automatic; mathtext works;
   Enter applies). Everything else applies as you click, keeps the zoom, and
   follows whichever line is selected.
-- **Axes**: per panel, under Background. Type an x or y range (**from** /
+- **Axes editor**: the small plot button under ⇅ opens it, for the selected
+  panel (it follows the selection). Type an x or y range (**from** /
   **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
   function; leave an end blank to let it follow the data. **Use current
   view** fills the boxes from what the panel shows, e.g. after zooming, to
