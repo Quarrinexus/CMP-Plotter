@@ -240,11 +240,14 @@ class Plotter(tk.Tk):
         name_box.pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             name_box.bind(key, lambda _: self.save())
+        # Two rows, as three buttons in one would widen the column: the panels,
+        # then saving.
         buttons = ttk.Frame(save)
         buttons.pack(anchor=tk.W, pady=(8, 0))
         ttk.Button(buttons, text="Layout...", command=self.choose_layout).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="Save figure", command=self.save).pack(
-            side=tk.LEFT, padx=(6, 0))
+        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
+        self.delete_button.pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(save, text="Save figure", command=self.save).pack(anchor=tk.W, pady=(6, 0))
 
         self.fig = Figure(figsize=(8, 5), constrained_layout=True)
         plot = ttk.Frame(self)
@@ -757,6 +760,7 @@ class Plotter(tk.Tk):
         self._show_axes()
         self.fft_window.show()
         self.link_status()
+        self.delete_button.state(["!disabled" if len(self.panels) > 1 else "disabled"])
         self._say("")
         self._show_error()
         self._show_colour()
@@ -1134,6 +1138,37 @@ class Plotter(tk.Tk):
         self.rows, self.cols = rows, cols
         self._build_axes()
         self._load_controls()
+
+    def delete_panel(self):
+        """Delete the selected panel. The panels after it, in reading order, move
+        back one place; the grid loses the row or column that leaves empty, if
+        one does, or else keeps an empty panel in its last cell."""
+        self.stop_picking()
+        if len(self.panels) == 1:
+            return
+        order = sorted(self.panels)  # reading order
+        gone, number = self.selected, self._number(self.selected)
+        for p in self.panels.values():
+            if p.source == gone:
+                self._unlink(p)  # its data panel is going; keep what it showed
+        kept = [c for c in order if c != gone]
+        moved = dict(zip(kept, order))  # old cell -> new cell
+        panels = {moved[c]: self.panels[c] for c in kept}
+        for p in panels.values():
+            if p.source is not None:
+                p.source = moved[p.source]
+        if self.cols == 1:
+            self.rows -= 1
+        elif self.rows == 1:
+            self.cols -= 1
+        else:
+            panels[order[-1]] = Panel()
+        self.panels = panels
+        # The panel that took its place, or the new last one.
+        self.selected = order[min(order.index(gone), len(kept) - 1)]
+        self._build_axes()
+        self._load_controls()
+        self._say(f"Deleted panel {number}; Ctrl+Z brings it back.")
 
     def swap(self):
         """Swap X and Y, with their functions (x <-> y), for every line in the panel."""

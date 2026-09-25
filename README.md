@@ -174,6 +174,12 @@ in red under the Y axis until it's fixed or another line is selected.
   dataset, axes and functions; click a line in the list or on the plot to edit
   it.
 - **Layout...**: hover to size the grid, click to apply. Click a panel to select it.
+- **Delete panel** (beside Layout...): deletes the selected panel. The
+  panels after it, across then down, move back one place, and the grid loses
+  the row or column that leaves empty (a 3 x 1 stack becomes 2 x 1); in a
+  grid of both rows and columns the last cell gets an empty panel instead.
+  An FFT panel of the deleted one keeps its lines, unlinked. Ctrl+Z brings
+  it back. There's always at least one panel.
 - **⇅** (beside the X and Y axis boxes): swaps x and y, functions included, for
   every line in the panel.
 - **Save figure**: writes to the output folder, named after the plot (e.g.
