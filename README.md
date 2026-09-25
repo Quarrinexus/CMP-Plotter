@@ -84,8 +84,8 @@ keeps them.
 ## Use
 
 The Lines list, Dataset and axes are always at the top of the controls
-column. The rest is in three tabs under them: **Line** (Smoothing,
-Background), **Panel** (FFT, Linked data) and **Files** (folders, Data
+column. The rest is in four tabs under them: **Process** (Smoothing,
+Background), **Spectrum** (FFT), **Linking** (Linked data) and **Files** (folders, Data
 format, sessions). If the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
@@ -124,7 +124,7 @@ in red under the Y axis until it's fixed or another line is selected.
   legend**, also shown in the Lines list (blank: automatic; mathtext works;
   Enter applies). Everything else applies as you click, keeps the zoom, and
   follows whichever line is selected.
-- **Axes editor**: the small plot button left of ⇅ opens it, for the selected
+- **Axes editor**: the small plot button right of ⇅ opens it, for the selected
   panel (it follows the selection). Type an x or y range (**from** /
   **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
   function; leave an end blank to let it follow the data. **Use current

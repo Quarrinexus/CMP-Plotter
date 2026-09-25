@@ -177,13 +177,13 @@ class Plotter(tk.Tk):
         self.x_fn = self._function_box(axis_boxes, "x")
         self.y = self._combo(axis_boxes, "Y axis", [], width=21)
         self.y_fn = self._function_box(axis_boxes, "y")
-        # Beside the axis boxes: swap x and y, and the axes editor.
+        # Beside the axis boxes: swap x and y, then the axes editor.
         axis_buttons = ttk.Frame(axes)
         axis_buttons.pack(side=tk.LEFT, padx=(6, 0))
         self.swap_icon, self.axes_icon = swap_icon(), axes_icon()
-        ttk.Button(axis_buttons, image=self.axes_icon, command=self.open_axes).pack(
-            side=tk.LEFT)
         ttk.Button(axis_buttons, image=self.swap_icon, command=self.swap).pack(
+            side=tk.LEFT)
+        ttk.Button(axis_buttons, image=self.axes_icon, command=self.open_axes).pack(
             side=tk.LEFT, padx=(4, 0))
         # Why the selected line isn't drawn; shown only when it isn't.
         self.error_label = ttk.Label(controls, foreground=theme.ERROR, wraplength=300)
@@ -196,16 +196,16 @@ class Plotter(tk.Tk):
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
         self.tabs = {}
-        for name in ("Line", "Panel", "Files"):
+        for name in ("Process", "Spectrum", "Linking", "Files"):
             ttk.Radiobutton(strip, text=name, value=name, variable=self.tab,
                             style="Toolbutton", command=self._show_tab).pack(
-                side=tk.LEFT, padx=(0, 4))
+                side=tk.LEFT, padx=(0, 2))
             self.tabs[name] = ttk.Frame(controls)
         # Smoothing's and FFT's toggles add the 10 px above them.
-        self._smoothing_box(self.tabs["Line"])
-        self._background_box(self.tabs["Line"])
-        self._fft_box(self.tabs["Panel"])
-        self._link_box(self.tabs["Panel"])
+        self._smoothing_box(self.tabs["Process"])
+        self._background_box(self.tabs["Process"])
+        self._fft_box(self.tabs["Spectrum"])
+        self._link_box(self.tabs["Linking"])
         files = self.tabs["Files"]
         files.configure(padding=(0, 10, 0, 0))  # as the other tabs' toggles have
         self.data_label = self._folder_row(files, "Data folder", "data_dir")
@@ -221,7 +221,7 @@ class Plotter(tk.Tk):
             side=tk.LEFT, padx=(6, 0))
         # Files first only if a folder still needs choosing.
         folders_set = self.settings.get("data_dir") and self.settings.get("output_dir")
-        self.tab.set("Line" if folders_set else "Files")
+        self.tab.set("Process" if folders_set else "Files")
         self._show_tab()
         self.bind("<Escape>", lambda _: self.stop_picking())
         self._bind_keys()
@@ -543,7 +543,7 @@ class Plotter(tk.Tk):
             used = f": of panel {self._number(source)}" if source and not is_open else ""
             return f"FFT{used}"
 
-        body = self._collapsible(parent, (10, 0), text)
+        body = self._collapsible(parent, (10, 0), text, start_open=True)
         # For a data panel: the two ways to make its FFT.
         make = ttk.Frame(body)
         ttk.Button(make, text="FFT to new panel", command=self.fft_new_panel).pack(
@@ -602,7 +602,7 @@ class Plotter(tk.Tk):
                 if others and not is_open else ""
             return f"Linked data{used}"
 
-        body = self._collapsible(parent, (10, 0), text)
+        body = self._collapsible(parent, (10, 0), text, start_open=True)
         status = ttk.Label(body, foreground=theme.MUTED, wraplength=230)
         status.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(body)
