@@ -109,11 +109,15 @@ keeps them.
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick on plot** sets the range by dragging across the plot.
   The fit comes before smoothing.
-- **Line style**: per line, under Background. **Line** (Auto is solid, or
-  dashed for a shown fit; None leaves only the markers), **Width**,
-  **Marker**, and **Name**, its name in the legend and the Lines list
-  (blank: automatic; mathtext works). Changing these keeps the zoom.
-- **Axes**: per panel, under Line style. Type an x or y range (**from** /
+- **Line editor**: the box under + and -, which shows the selected line's
+  look, opens it. **Colour** (drag in the field and the brightness strip;
+  **Automatic** goes back to the sample's colour or a free one), **Line**
+  (Auto is solid, or dashed for a shown fit; None leaves only the markers),
+  **Width** (**Auto** undoes a set width), **Marker**, and **Name in the
+  legend**, also shown in the Lines list (blank: automatic; mathtext works;
+  Enter applies). Everything else applies as you click, keeps the zoom, and
+  follows whichever line is selected.
+- **Axes**: per panel, under Background. Type an x or y range (**from** /
   **to**, Enter applies) in the plotted units, so in 1/B with a `1/x`
   function; leave an end blank to let it follow the data. **Use current
   view** fills the boxes from what the panel shows, e.g. after zooming, to
@@ -151,7 +155,7 @@ keeps them.
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
-  it. The swatch beside the list picks its colour.
+  it.
 - **Layout...**: hover to size the grid, click to apply. Click a panel to select it.
 - **⇅** (beside the X and Y axis boxes): swaps x and y, functions included, for
   every line in the panel.

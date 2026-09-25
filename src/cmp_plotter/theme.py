@@ -49,6 +49,18 @@ def apply(root):
     style.map("TScrollbar", background=[("pressed", BORDER_HOVER), ("active", BORDER_HOVER)],
               lightcolor=[("active", BORDER_HOVER)], darkcolor=[("active", BORDER_HOVER)])
     style.configure("TSeparator", background=BORDER)
+    # Toolbuttons: the line editor's pick-one pictures. Box.TButton: the small
+    # buttons beside the Lines list, which share the list's height.
+    style.configure("Toolbutton", background=SURFACE, bordercolor=BORDER, padding=(6, 4))
+    style.map("Toolbutton",
+              background=[("selected", ACCENT_SOFT), ("pressed", PRESSED), ("active", HOVER)],
+              bordercolor=[("selected", ACCENT), ("active", BORDER_HOVER)],
+              lightcolor=[("selected", ACCENT_SOFT), ("active", HOVER)],
+              darkcolor=[("selected", ACCENT_SOFT), ("active", HOVER)])
+    style.configure("Box.TButton", padding=0)
+    style.configure("TScale", background=SURFACE, bordercolor=BORDER_HOVER, gripsize=0,
+                    troughcolor=BORDER, lightcolor=SURFACE, darkcolor=SURFACE, sliderlength=14)
+    style.map("TScale", background=[("pressed", PRESSED), ("active", HOVER)])
     style.configure("Treeview", background=SURFACE)
     style.configure("Treeview.Heading", background=BACKGROUND, relief=tk.FLAT)
     style.map("Treeview.Heading", background=[("active", HOVER)])

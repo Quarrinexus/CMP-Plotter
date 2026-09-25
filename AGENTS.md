@@ -34,7 +34,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `spectrum.py` | FFT of a line against its plotted x, for FFT panels |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
-| `widgets.py` | colour picker, layout grid |
+| `widgets.py` | the line editor (colour picker, style, width, marker, name), layout grid, overwrite question |
 | `session.py` | panels and lines to and from JSON-ready data, for session files and undo |
 | `theme.py` | the window's colours and ttk styling; use its names, not hex codes, in Tk widgets |
 

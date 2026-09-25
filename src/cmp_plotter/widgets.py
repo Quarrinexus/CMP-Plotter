@@ -1,13 +1,15 @@
-"""Tk widgets used by the main window: the colour picker and the layout grid."""
+"""Tk widgets used by the main window: the line editor with its colour picker,
+the layout grid and the overwrite question."""
 
 import tkinter as tk
 from tkinter import ttk
 
 from matplotlib.colors import hsv_to_rgb, rgb_to_hsv, to_hex, to_rgb
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from cmp_plotter import theme
+from cmp_plotter.model import MARKERS, STYLES
 
 SELECTED = "#e8a33d"  # frame around the selected panel
 MAX_GRID = 6  # the layout picker offers up to MAX_GRID x MAX_GRID panels
@@ -85,32 +87,6 @@ class ColourPicker(ttk.Frame):
         self._draw()
         self.on_change(self.colour())
 
-
-class ColourPopup(tk.Toplevel):
-    """The colour picker in its own window, editing the selected line."""
-
-    def __init__(self, parent, on_change, on_reset):
-        super().__init__(parent)
-        self.title("Line colour")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.picker = ColourPicker(self, on_change)
-        self.picker.pack(padx=10, pady=(10, 6))
-        row = ttk.Frame(self)
-        row.pack(anchor=tk.W, padx=10, pady=(0, 10))
-        self.swatch = tk.Label(row, width=3, relief=tk.SOLID, borderwidth=1)
-        self.swatch.pack(side=tk.LEFT, fill=tk.Y)
-        self.hex = ttk.Label(row, width=8, font="TkFixedFont")
-        self.hex.pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(row, text="Reset", command=on_reset).pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(row, text="Close", command=self.destroy).pack(side=tk.LEFT, padx=(6, 0))
-        self.bind("<Escape>", lambda _: self.destroy())
-
-    def show(self, colour, move_picker=True):
-        self.swatch["background"] = colour
-        self.hex["text"] = colour
-        if move_picker:
-            self.picker.set(colour)
 
 
 class LayoutPicker(tk.Toplevel):
@@ -199,3 +175,166 @@ class OverwriteDialog(tk.Toplevel):
     def _replace(self):
         self.replace = True
         self.destroy()
+
+
+# Dash patterns for the previews, in multiples of the line width (as matplotlib's).
+DASHES = {"-": None, "--": (3.7, 1.6), ":": (1, 1.65), "-.": (6.4, 1.6, 1, 1.6)}
+
+
+def line_sample(style, marker, colour, width=1.0, size=(44, 16)):
+    """A small picture of a line: its style (a key of STYLES, "auto" drawn
+    solid), marker (a key of MARKERS) and colour. Drawn 4x and shrunk, for
+    smooth edges."""
+    k = 4
+    w, h = size[0] * k, size[1] * k
+    image = Image.new("RGBA", (w, h))
+    draw = ImageDraw.Draw(image)
+    lw = max(1.0, width * 1.6) * k  # a little heavier than on the plot, to read at this size
+    y = h / 2
+    pattern = DASHES.get("-" if style == "auto" else style)
+    if style != "none":
+        if pattern is None:
+            draw.line((0, y, w, y), fill=colour, width=round(lw))
+        else:
+            x, i = 0.0, 0
+            while x < w:
+                length = pattern[i % len(pattern)] * lw
+                if i % 2 == 0:
+                    draw.line((x, y, min(x + length, w), y), fill=colour, width=round(lw))
+                x, i = x + length, i + 1
+    r = 2.6 * k
+    for cx in (w * 0.2, w * 0.5, w * 0.8) if marker else ():
+        box = (cx - r, y - r, cx + r, y + r)
+        if marker == ".":
+            draw.ellipse((cx - r / 2, y - r / 2, cx + r / 2, y + r / 2), fill=colour)
+        elif marker == "o":
+            draw.ellipse(box, fill=colour)
+        elif marker == "s":
+            draw.rectangle(box, fill=colour)
+        elif marker == "^":
+            draw.polygon(((cx - r, y + r), (cx + r, y + r), (cx, y - r)), fill=colour)
+        elif marker == "x":
+            draw.line(box, fill=colour, width=k * 2)
+            draw.line((cx - r, y + r, cx + r, y - r), fill=colour, width=k * 2)
+    return ImageTk.PhotoImage(image.resize(size, Image.LANCZOS))
+
+
+class LineStylePopup(tk.Toplevel):
+    """Colour, line style, width, marker and legend name for the selected line,
+    in its own window. Changes apply as they're made: `on_colour('#rrggbb')`,
+    `on_reset()` for the automatic colour, and `on_change(merge, **settings)`
+    for the rest, with `merge` true while the width slider is being dragged."""
+
+    WIDTHS = (0.2, 5.0)
+
+    def __init__(self, parent, on_change, on_colour, on_reset):
+        super().__init__(parent)
+        self.title("Line")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.on_change = on_change
+        self.loading = False  # while show() fills the controls
+        self.images = {}
+        self.style, self.marker = tk.StringVar(), tk.StringVar()
+        self.width, self.name = tk.DoubleVar(), tk.StringVar()
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(body, text="Colour", foreground=theme.MUTED).pack(anchor=tk.W)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 10))
+        self.picker = ColourPicker(row, on_colour)
+        self.picker.pack(side=tk.LEFT)
+        side = ttk.Frame(row)
+        side.pack(side=tk.LEFT, anchor=tk.N, padx=(12, 0))
+        self.swatch = tk.Label(side, width=6, height=2, relief=tk.SOLID, borderwidth=1)
+        self.swatch.pack(anchor=tk.W)
+        self.hex = ttk.Label(side, font="TkFixedFont")
+        self.hex.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Button(side, text="Automatic", command=on_reset).pack(anchor=tk.W, pady=(8, 0))
+        ttk.Label(side, text="the sample's, or\na free one", foreground=theme.HINT).pack(
+            anchor=tk.W)
+
+        ttk.Label(body, text="Line", foreground=theme.MUTED).pack(anchor=tk.W)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 10))
+        self.style_buttons = {}
+        for key in STYLES:
+            button = ttk.Radiobutton(row, variable=self.style, value=key, style="Toolbutton",
+                                     compound=tk.TOP, text=STYLES[key],
+                                     command=lambda: self._changed(style=self.style.get()))
+            button.pack(side=tk.LEFT, padx=(0, 4))
+            self.style_buttons[key] = button
+
+        ttk.Label(body, text="Width", foreground=theme.MUTED).pack(anchor=tk.W)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, fill=tk.X, pady=(2, 10))
+        self.scale = ttk.Scale(row, from_=self.WIDTHS[0], to=self.WIDTHS[1], length=220,
+                               variable=self.width, command=self._slide)
+        self.scale.pack(side=tk.LEFT)
+        self.scale.bind("<ButtonRelease-1>", lambda _: self._changed())  # the drag ends
+        self.width_label = ttk.Label(row, width=9)
+        self.width_label.pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(row, text="Auto", command=lambda: self._changed(width=None)).pack(
+            side=tk.LEFT)
+
+        ttk.Label(body, text="Marker", foreground=theme.MUTED).pack(anchor=tk.W)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 10))
+        self.marker_buttons = {}
+        for key in MARKERS:
+            button = ttk.Radiobutton(row, variable=self.marker, value=key, style="Toolbutton",
+                                     compound=tk.TOP, text=MARKERS[key],
+                                     command=lambda: self._changed(marker=self.marker.get()))
+            button.pack(side=tk.LEFT, padx=(0, 4))
+            self.marker_buttons[key] = button
+
+        ttk.Label(body, text="Name in the legend", foreground=theme.MUTED).pack(anchor=tk.W)
+        entry = ttk.Entry(body, textvariable=self.name, width=40)
+        entry.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(body, text="Enter applies; blank: automatic; $...$ for maths",
+                  foreground=theme.HINT).pack(anchor=tk.W)
+        for key in ("<Return>", "<KP_Enter>"):
+            entry.bind(key, lambda _: self._changed(label=self.name.get().strip()))
+        ttk.Button(body, text="Close", command=self.destroy).pack(anchor=tk.E, pady=(10, 0))
+        self.bind("<Escape>", lambda _: self.destroy())
+
+    def _width(self):
+        return round(self.width.get(), 1)
+
+    def _slide(self, _):
+        if self.loading:
+            return
+        self.width_label["text"] = f"{self._width():g}"
+        self._changed(merge=True, width=self._width())
+
+    def _changed(self, merge=False, **settings):
+        if not self.loading:
+            self.on_change(merge, **settings)
+
+    def show(self, line, colour, move_picker=True):
+        """Show `line`'s settings, its previews in `colour`, without calling back.
+
+        `move_picker` false: the colour came from the picker, which already shows
+        it; moving it would round-trip through hex."""
+        self.loading = True
+        try:
+            self.swatch["background"] = colour
+            self.hex["text"] = colour
+            if move_picker:
+                self.picker.set(colour)
+            self.style.set(line.style)
+            self.marker.set(line.marker)
+            width = line.auto_width if line.width is None else line.width
+            self.width.set(width)
+            self.width_label["text"] = f"{width:g}" + (" (auto)" if line.width is None else "")
+            self.name.set(line.label)
+            # The lines alone and the markers alone, heavy enough to tell apart.
+            for key, button in self.style_buttons.items():
+                self.images["style", key] = line_sample(key, "", colour, 1.6)
+                button["image"] = self.images["style", key]
+            for key, button in self.marker_buttons.items():
+                self.images["marker", key] = line_sample("none", key, colour)
+                button["image"] = self.images["marker", key]
+        finally:
+            self.loading = False
