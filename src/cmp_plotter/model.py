@@ -83,6 +83,11 @@ class Panel:
     x_max: float | None = None
     y_min: float | None = None
     y_max: float | None = None
+    # Typed text, "" for the automatic one; matplotlib mathtext like $B$ works.
+    title: str = ""
+    x_label: str = ""
+    y_label: str = ""
+    legend: str = "auto"  # a key of LEGENDS
 
     @property
     def line(self):
@@ -95,6 +100,12 @@ class Panel:
 
 
 RANGES = ("x_min", "x_max", "y_min", "y_max")
+
+# Legend placement -> the text in its menu. "auto": only with two or more
+# lines, wherever there's room; a placement shows it even for one line.
+LEGENDS = {"auto": "Auto", "off": "Off", "upper right": "Top right",
+           "upper left": "Top left", "lower left": "Bottom left",
+           "lower right": "Bottom right", "outside": "Outside right"}
 
 
 def clear_ranges(panel, axes="xy"):

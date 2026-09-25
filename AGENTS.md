@@ -111,6 +111,10 @@ applies them after drawing, which turns autoscaling off, so the zoom-keeping
 in `_redraw_selected` treats them as user-set: after changing them, redraw
 with `keep=""` (as `apply_axes` does) or the old range comes back.
 
+The typed title and labels (`Panel.title`, `x_label`, `y_label`) are checked
+with `text_problem` before they're stored: bad mathtext only fails when the
+canvas draws, and on the real figure that would break every redraw after.
+
 ## Things that look odd but are deliberate
 
 - **Row order, not sorted x.** The field record jitters (hundreds of direction

@@ -114,7 +114,12 @@ keeps them.
   function; leave an end blank to let it follow the data. **Use current
   view** fills the boxes from what the panel shows, e.g. after zooming, to
   pin it. A range is cleared when what's on its axis changes (another column
-  or function), and ⇅ swaps the x and y ranges.
+  or function), and ⇅ swaps the x and y ranges. **Title**, **x label** and
+  **y label** replace the panel's own (blank: automatic; matplotlib mathtext
+  like `$B$ (T)` works); they stay when the data changes, so update them
+  with it. **Legend**: Auto shows one for two or more lines, Off hides it,
+  and a position (a corner, or Outside right of the panel) shows it there
+  even for one line.
 - **FFT**: **FFT to new panel** adds a row with the selected panel's spectrum
   under it; **FFT to existing panel...** puts it in the panel you click next
   (asking first if that panel has lines of its own). The two panels are locked

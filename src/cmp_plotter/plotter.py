@@ -4,6 +4,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
@@ -13,8 +14,8 @@ from PIL import Image, ImageDraw, ImageTk
 from cmp_plotter.axis_functions import apply_function, is_identity, rename
 from cmp_plotter import background, smoothing, spectrum, theme
 from cmp_plotter.columns import label, lookup, with_unit, without_unit
-from cmp_plotter.model import (LINKED, RANGES, Panel, clear_ranges, legend_labels,
-                               line_colours, shared)
+from cmp_plotter.model import (LEGENDS, LINKED, RANGES, Panel, clear_ranges,
+                               legend_labels, line_colours, shared)
 from cmp_plotter.profile import load_profile, save_format
 from cmp_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -45,6 +46,21 @@ def title(names):
     if all(numbers):
         return "run " + ", ".join(numbers)
     return ", ".join(describe(n) for n in names)
+
+
+def text_problem(text):
+    """Why matplotlib can't draw `text` (bad mathtext, e.g. '$B'), or ''.
+
+    Found by drawing it on a scratch figure: on the real one the error would
+    come from every later redraw instead."""
+    fig = Figure()
+    FigureCanvasAgg(fig)
+    fig.text(0, 0, text)
+    try:
+        fig.canvas.draw()
+    except Exception as err:  # ValueError from the mathtext parser, mostly
+        return str(err).strip().splitlines()[0] if str(err).strip() else "can't be drawn"
+    return ""
 
 
 def swap_icon(colour=theme.MUTED):
@@ -449,11 +465,16 @@ class Plotter(tk.Tk):
     def _axes_box(self, parent):
         """A collapsed 'Axes' toggle: the selected panel's x and y ranges."""
         self.ranges = {name: tk.StringVar() for name in RANGES}
+        self.texts = {name: tk.StringVar() for name in ("title", "x_label", "y_label")}
+        self.legend = tk.StringVar()
 
         def text(is_open):
             p = self.panel
-            used = any(getattr(p, name) is not None for name in RANGES)
-            return "Axes: range set" if used and not is_open else "Axes"
+            used = [what for what, on in (
+                ("range", any(getattr(p, name) is not None for name in RANGES)),
+                ("labels", any(getattr(p, name) for name in self.texts)),
+                ("legend", p.legend != "auto")) if on]
+            return f"Axes: {', '.join(used)}" if used and not is_open else "Axes"
 
         body = self._collapsible(parent, (10, 0), text)
         boxes = []
@@ -472,6 +493,22 @@ class Plotter(tk.Tk):
         ttk.Button(row, text="Use current view", command=self.use_view).pack(side=tk.LEFT)
         ttk.Label(row, text="blank: automatic", foreground=theme.HINT).pack(
             side=tk.LEFT, padx=(8, 0))
+        for name, label in (("title", "Title"), ("x_label", "x label"), ("y_label", "y label")):
+            row = ttk.Frame(body)
+            row.pack(anchor=tk.W, pady=(4, 0))
+            ttk.Label(row, text=label, width=6).pack(side=tk.LEFT)
+            box = ttk.Entry(row, textvariable=self.texts[name], width=22)
+            box.pack(side=tk.LEFT, padx=(4, 0))
+            boxes.append(box)
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="Legend", width=6).pack(side=tk.LEFT)
+        legend = ttk.Combobox(row, textvariable=self.legend, state="readonly", width=13,
+                              values=list(LEGENDS.values()))
+        legend.pack(side=tk.LEFT, padx=(4, 0))
+        legend.bind("<<ComboboxSelected>>", lambda _: self.apply_axes())
+        ttk.Label(body, text="blank: automatic; $...$ for maths, e.g. $B$ (T)",
+                  foreground=theme.HINT, wraplength=230).pack(anchor=tk.W)
         for box in boxes:
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_axes())
@@ -481,6 +518,9 @@ class Plotter(tk.Tk):
             for name, var in self.ranges.items():
                 value = getattr(self.panel, name)
                 var.set("" if value is None else f"{value:.6g}")
+            for name, var in self.texts.items():
+                var.set(getattr(self.panel, name))
+            self.legend.set(LEGENDS[self.panel.legend])
         self.ranges_show = refresh
 
     def _fft_box(self, parent):
@@ -958,19 +998,22 @@ class Plotter(tk.Tk):
             y_labels.append(y_label)
 
         if drawn:
-            ax.set_xlabel(shared(x_labels))
-            ax.set_ylabel(shared(y_labels))
+            ax.set_xlabel(p.x_label or shared(x_labels))
+            ax.set_ylabel(p.y_label or shared(y_labels))
             heading = title(dict.fromkeys(l.run for l in drawn))
             if fft:  # short, as FFT panels often sit beside or under their data
                 heading = f"FFT of panel {self._number(p.source)}"
                 if np.isfinite(resolutions[0]):  # the frequency resolution
                     heading += f" · ΔF {resolutions[0]:.3g}"
-            ax.set_title(heading)
+            ax.set_title(p.title or heading)
             ax.grid(True, lw=0.4, alpha=0.8)
-            if len(drawn) > 1:
+            if p.legend != "off" and (p.legend != "auto" or len(drawn) > 1):
                 for artist, text in zip(ax.lines, legend_labels(drawn)):
                     artist.set_label(text)
-                ax.legend(fontsize=8)
+                if p.legend == "outside":  # constrained layout makes room for it
+                    ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.02, 0.5))
+                else:
+                    ax.legend(fontsize=8, loc="best" if p.legend == "auto" else p.legend)
             # Typed ranges; an end left blank stays where autoscaling put it.
             if p.x_min is not None or p.x_max is not None:
                 ax.set_xlim(p.x_min, p.x_max)
@@ -1068,6 +1111,7 @@ class Plotter(tk.Tk):
         data, *ffts = self._linked(self.selected)
         p = self.panels[data]  # the data panel's ranges swap with its axes
         p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
+        p.x_label, p.y_label = p.y_label, p.x_label
         for c in ffts:  # a spectrum of the other axis: nothing like the old one
             clear_ranges(self.panels[c])
         for l in self.panel.lines:
@@ -1106,6 +1150,7 @@ class Plotter(tk.Tk):
         p.lines = [l.copy() for l in p.lines]
         p.source = None
         clear_ranges(p)  # in frequency; it's back to plotting the data
+        p.title = p.x_label = p.y_label = ""
 
     def fft_new_panel(self):
         """Add a row below the grid, with the selected panel's FFT under it."""
@@ -1193,6 +1238,14 @@ class Plotter(tk.Tk):
             except ValueError:  # not a number: keep the old one (shown again below)
                 pass
         problem = ""
+        for name, var in self.texts.items():
+            text = var.get().strip()
+            why = text_problem(text) if text else ""
+            if why:  # keep the old text (shown again below)
+                problem = f"Can't draw that {name.replace('_', ' ')}: {plain(why)}"
+            else:
+                setattr(p, name, text)
+        p.legend = next(k for k, v in LEGENDS.items() if v == self.legend.get())
         for axis in "xy":
             low, high = getattr(p, f"{axis}_min"), getattr(p, f"{axis}_max")
             if low is not None and high is not None and low == high:
