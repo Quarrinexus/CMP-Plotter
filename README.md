@@ -129,8 +129,9 @@ stay until it's done or cancelled.
   (Auto is solid, or dashed for a shown fit; None leaves only the markers),
   **Width** (**Auto** undoes a set width), **Marker** with its **Size**
   (for any marker but None; **Auto** is 3), and **Name in the
-  legend**, also shown in the Lines list (blank: automatic; mathtext works;
-  Enter applies). Everything else applies as you click, keeps the zoom, and
+  legend**, also shown in the Lines list: the box shows the automatic name
+  until you change it; clear it to leave the line out of the legend, and
+  **Auto** goes back to the automatic name (mathtext works; Enter applies). Everything else applies as you click, keeps the zoom, and
   follows whichever line is selected.
 - **Axes editor**: the small plot button right of ⇅ opens it, for the selected
   panel (it follows the selection). Type an x or y range (**from** /
@@ -139,9 +140,11 @@ stay until it's done or cancelled.
   view** fills the boxes from what the panel shows, e.g. after zooming, to
   pin it. A range is cleared when what's on its axis changes (another column
   or function), and ⇅ swaps the x and y ranges. **Title**, **x label** and
-  **y label** replace the panel's own (blank: automatic; matplotlib mathtext
-  like `$B$ (T)` works); they stay when the data changes, so update them
-  with it. **Legend**: Auto shows one for two or more lines, Off hides it,
+  **y label** show the panel's automatic text until you change it, which
+  then replaces it (matplotlib mathtext like `$B$ (T)` works); clear a box
+  to leave that text off, and **Auto** goes back to the automatic one. Left
+  automatic, a text follows the data; one you've typed (or cleared) stays
+  when the data changes, so update it with it. **Legend**: Auto shows one for two or more lines, Off hides it,
   and a position (a corner, or Outside right of the panel) shows it there
   even for one line. **Grid**: **show** Off, Major (the default) or Major +
   minor (fainter lines between the major ones), on **axis** Both, x only or

@@ -429,9 +429,13 @@ class LineStylePopup(tk.Toplevel):
         self.size_auto.pack(side=tk.LEFT)
 
         ttk.Label(body, text="Name in the legend", foreground=theme.MUTED).pack(anchor=tk.W)
-        entry = ttk.Entry(body, textvariable=self.name, width=40)
-        entry.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(body, text="Enter applies; blank: automatic",
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        entry = ttk.Entry(row, textvariable=self.name, width=40)
+        entry.pack(side=tk.LEFT)
+        ttk.Button(row, text="Auto", command=lambda: self._changed(label=None)).pack(
+            side=tk.LEFT, padx=(6, 0))
+        ttk.Label(body, text="Enter applies; clear it for none, Auto for the automatic one",
                   foreground=theme.HINT).pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             entry.bind(key, lambda _: self._changed(label=self.name.get().strip()))
@@ -450,8 +454,9 @@ class LineStylePopup(tk.Toplevel):
         if not self.loading:
             self.on_change(merge, **settings)
 
-    def show(self, line, colour, move_picker=True):
-        """Show `line`'s settings, its previews in `colour`, without calling back.
+    def show(self, line, colour, move_picker=True, auto_name=""):
+        """Show `line`'s settings, its previews in `colour`, without calling back;
+        `auto_name` is its automatic legend name, shown when it has no name of its own.
 
         `move_picker` false: the colour came from the picker, which already shows
         it; moving it would round-trip through hex."""
@@ -472,7 +477,7 @@ class LineStylePopup(tk.Toplevel):
             # Only a line with markers has a size to set.
             for widget in (self.size_scale, self.size_auto):
                 widget.state(["!disabled" if line.marker else "disabled"])
-            self.name.set(line.label)
+            self.name.set(auto_name if line.label is None else line.label)
             # The lines alone and the markers alone, heavy enough to tell apart.
             for key, button in self.style_buttons.items():
                 self.images["style", key] = line_sample(key, "", colour, 1.6)
@@ -487,8 +492,9 @@ class LineStylePopup(tk.Toplevel):
 class AxesPopup(tk.Toplevel):
     """The selected panel's ranges, title, axis labels, legend and grid, in their
     own window. Enter in a box, or a legend or grid button, calls `on_apply()`,
-    which reads `values()`; Use current view calls `on_use_view()`. The Ticks
-    box is for every panel, not just this one: it calls `on_ticks(inward)`."""
+    which reads `values()`; Use current view calls `on_use_view()`, and a
+    text's Auto `on_auto(name)`. The Ticks box is for every panel, not just
+    this one: it calls `on_ticks(inward)`."""
 
     # Panel field -> its buttons' texts, for the Grid rows.
     GRID_ROWS = (("grid", "show", GRIDS), ("grid_axis", "axis", GRID_AXES),
@@ -496,7 +502,7 @@ class AxesPopup(tk.Toplevel):
 
     TEXTS = (("title", "Title"), ("x_label", "x label"), ("y_label", "y label"))
 
-    def __init__(self, parent, on_apply, on_use_view, ticks_in, on_ticks):
+    def __init__(self, parent, on_apply, on_use_view, ticks_in, on_ticks, on_auto):
         super().__init__(parent)
         self.resizable(False, False)
         self.transient(parent)
@@ -533,8 +539,10 @@ class AxesPopup(tk.Toplevel):
             box = ttk.Entry(row, textvariable=self.texts[name], width=30)
             box.pack(side=tk.LEFT)
             boxes.append(box)
-        ttk.Label(body, text="blank: automatic; $B$ for maths", foreground=theme.HINT).pack(
-            anchor=tk.W, pady=(0, 10))
+            ttk.Button(row, text="Auto", width=5, command=lambda name=name: on_auto(name)).pack(
+                side=tk.LEFT, padx=(6, 0))
+        ttk.Label(body, text="clear for none, Auto for the automatic text; $B$ for maths",
+                  foreground=theme.HINT).pack(anchor=tk.W, pady=(0, 10))
 
         ttk.Label(body, text="Legend", foreground=theme.MUTED).pack(anchor=tk.W)
         keys = list(LEGENDS)
@@ -580,14 +588,16 @@ class AxesPopup(tk.Toplevel):
             self.ranges[f"{axis}_min"].set(f"{low:.6g}")
             self.ranges[f"{axis}_max"].set(f"{high:.6g}")
 
-    def show(self, panel, number):
-        """Fill the boxes from `panel`, number `number` in the grid."""
+    def show(self, panel, number, auto):
+        """Fill the boxes from `panel`, number `number` in the grid; a text left
+        automatic shows the one drawn, from `auto` ({name: text})."""
         self.title(f"Axes of panel {number}")
         for name, var in self.ranges.items():
             value = getattr(panel, name)
             var.set("" if value is None else f"{value:.6g}")
         for name, var in self.texts.items():
-            var.set(getattr(panel, name))
+            text = getattr(panel, name)
+            var.set(auto.get(name, "") if text is None else text)
         self.legend.set(panel.legend)
         for name, var in self.choices.items():
             var.set(getattr(panel, name))

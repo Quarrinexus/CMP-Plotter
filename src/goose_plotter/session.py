@@ -8,12 +8,16 @@ from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS
                                  STYLES, SYNC, Line, Panel)
 from goose_plotter.widgets import MAX_GRID
 
-VERSION = 2  # 2: derived panels have their own lines, in their data panel's link group
+# 2: derived panels have their own lines, in their data panel's link group.
+# 3: a title, axis label or legend name of None is the automatic one, "" none.
+VERSION = 3
 KEY = "goose_plotter_session"  # the session file's marker, holding VERSION
 # `dump`'s own marker, so `load` reads undo snapshots and files alike; its
 # absence means the layout of version 1, where a derived panel shared its
-# data panel's lines and every panel carried an operation.
-FORMAT = 2
+# data panel's lines and every panel carried an operation. Before 3, "" was
+# the automatic text.
+FORMAT = 3
+TEXTS = {Panel: ("title", "x_label", "y_label"), Line: ("label",)}
 
 # Not saved: what the last draw found, and which line the controls edit.
 SKIP = {"shown", "error", "lines", "selected", "source"}
@@ -98,8 +102,8 @@ def load(state):
     if not (1 <= rows <= MAX_GRID and 1 <= cols <= MAX_GRID):
         raise ValueError(f"a {rows} x {cols} layout is bigger than the plotter allows")
     grid = [(r, c) for r in range(rows) for c in range(cols)]
-    if state.get("format") != FORMAT:
-        return rows, cols, _load_old(saved, grid)
+    if state.get("format") not in (2, FORMAT):
+        return rows, cols, _blank_is_auto(_load_old(saved, grid))
     panels = {}
     for cell in grid:
         data = saved.get(cell)
@@ -108,7 +112,17 @@ def load(state):
             continue
         lines = [_build(Line, l) for l in data.get("lines") or []] or [Line()]
         panels[cell] = _build(Panel, data, lines=lines, source=_source(data, grid))
-    return rows, cols, panels
+    return rows, cols, panels if state["format"] == FORMAT else _blank_is_auto(panels)
+
+
+def _blank_is_auto(panels):
+    """Before format 3 a blank title, label or legend name was the automatic one."""
+    for p in panels.values():
+        for obj in (p, *p.lines):
+            for name in TEXTS[type(obj)]:
+                if getattr(obj, name) == "":
+                    setattr(obj, name, None)
+    return panels
 
 
 def _source(data, grid):

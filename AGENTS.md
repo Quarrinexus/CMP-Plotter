@@ -141,8 +141,12 @@ applies them after drawing, which turns autoscaling off, so the zoom-keeping
 in `_redraw_selected` treats them as user-set: after changing them, redraw
 with `keep=""` (as `apply_axes` does) or the old range comes back.
 
-The typed title and labels (`Panel.title`, `x_label`, `y_label`) are checked
-with `text_problem` before they're stored: bad mathtext only fails when the
+The title, labels and legend names (`Panel.title`, `x_label`, `y_label`,
+`Line.label`) are None for the automatic text and "" for none. `_draw_panel`
+keeps what it drew in `auto_text` / `auto_names` for the editors to show;
+Enter on a box still showing that text leaves it None. Sessions before
+format 3 used "" for automatic, and `load` converts them. Typed texts are
+checked with `text_problem` before they're stored: bad mathtext only fails when the
 canvas draws, and on the real figure that would break every redraw after.
 
 ## Sessions

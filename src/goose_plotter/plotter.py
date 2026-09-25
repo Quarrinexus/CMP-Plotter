@@ -109,6 +109,9 @@ class Plotter(tk.Tk):
         self.selected = (0, 0)
         self.axes = {}  # (row, col) -> matplotlib Axes
         self.artists = {}  # (row, col) -> {matplotlib Line2D: line index}
+        # What each panel drew where its text is automatic, for the editors to show:
+        # (row, col) -> {"title"/"x_label"/"y_label": text}, and -> {line index: legend name}.
+        self.auto_text, self.auto_names = {}, {}
         self.style_popup = None
         self.axes_popup = None
         self.save_popup = None
@@ -1025,7 +1028,7 @@ class Plotter(tk.Tk):
         at = self.panel.selected + 1
         for lines in self._group_lists(self.selected):
             new = lines[at - 1].copy()
-            new.colour, new.label = None, ""  # its own colour and name
+            new.colour, new.label = None, None  # its own colour and name
             lines.insert(at, new)
         self._set_selected_line(self.selected, at)
         self._redraw_selected()
@@ -1135,7 +1138,8 @@ class Plotter(tk.Tk):
         derived, fft = p.derived, p.operation == "fft"
         ax.clear()
         self.artists[cell] = {}
-        drawn, x_labels, y_labels, errors, resolutions = [], [], [], [], []
+        drawn, indices, x_labels, y_labels, errors, resolutions = [], [], [], [], [], []
+        self.auto_text[cell], self.auto_names[cell] = {}, {}
         for i, (l, colour) in enumerate(zip(p.lines, line_colours(p, self.profile.samples))):
             l.shown, l.error = None, ""
             if not l.run:
@@ -1175,12 +1179,11 @@ class Plotter(tk.Tk):
             (artist,) = ax.plot(x, y, color=colour, **l.plot_style())
             self.artists[cell][artist] = i
             drawn.append(l)
+            indices.append(i)
             x_labels.append(x_label)
             y_labels.append(y_label)
 
         if drawn:
-            ax.set_xlabel(p.x_label or shared(x_labels))
-            ax.set_ylabel(p.y_label or shared(y_labels))
             heading = title(dict.fromkeys(l.run for l in drawn))
             if derived:  # short, as these often sit beside or under their data
                 heading = "FFT" if fft else derivative.HEADINGS[p.operation]
@@ -1188,7 +1191,12 @@ class Plotter(tk.Tk):
                     heading += f" of panel {self._number(p.source)}"
             if fft and np.isfinite(resolutions[0]):  # the frequency resolution
                 heading += f" · ΔF {resolutions[0]:.3g}"
-            ax.set_title(p.title or heading)
+            auto = self.auto_text[cell] = {"title": heading, "x_label": shared(x_labels),
+                                           "y_label": shared(y_labels)}
+            self.auto_names[cell] = dict(zip(indices, legend_labels(drawn)))
+            ax.set_title(auto["title"] if p.title is None else p.title)
+            ax.set_xlabel(auto["x_label"] if p.x_label is None else p.x_label)
+            ax.set_ylabel(auto["y_label"] if p.y_label is None else p.y_label)
             if p.grid != "off":
                 if p.grid == "minor":  # fainter, between the major lines
                     for axis in ("x", "y") if p.grid_axis == "both" else (p.grid_axis,):
@@ -1200,8 +1208,8 @@ class Plotter(tk.Tk):
             if self.settings.get("ticks_in") is True:  # a preference for every panel
                 ax.tick_params(which="both", direction="in")
             if p.legend != "off" and (p.legend != "auto" or len(drawn) > 1):
-                for artist, l, text in zip(ax.lines, drawn, legend_labels(drawn)):
-                    artist.set_label(l.label or text)
+                for artist, l, i in zip(ax.lines, drawn, indices):  # "": left out
+                    artist.set_label(self.auto_names[cell][i] if l.label is None else l.label)
                 if p.legend == "outside":  # constrained layout makes room for it
                     ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.02, 0.5))
                 else:
@@ -1416,7 +1424,7 @@ class Plotter(tk.Tk):
         if old.derived and old.source == source:  # derived from it: change what it shows
             if old.operation != operation:
                 clear_ranges(old)  # in the old operation's units
-                old.title = old.x_label = old.y_label = ""
+                old.title = old.x_label = old.y_label = None
                 old.operation = operation
         else:
             dependents = [c for c, p in self.panels.items() if p.source == target]
@@ -1473,7 +1481,7 @@ class Plotter(tk.Tk):
         if p.derived:
             p.operation, p.source = "", None
             clear_ranges(p)  # in frequency or dy/dx; it's back to plotting the data
-            p.title = p.x_label = p.y_label = ""
+            p.title = p.x_label = p.y_label = None
             self._build_axes()
             self._load_controls()
 
@@ -1481,7 +1489,8 @@ class Plotter(tk.Tk):
 
     def _show_axes(self):
         if self.axes_popup and self.axes_popup.winfo_exists():
-            self.axes_popup.show(self.panel, self._number(self.selected))
+            auto = {k: plain(v) for k, v in self.auto_text.get(self.selected, {}).items()}
+            self.axes_popup.show(self.panel, self._number(self.selected), auto)
 
     def open_axes(self):
         """The axes editor for the selected panel: ranges, text and legend."""
@@ -1489,7 +1498,8 @@ class Plotter(tk.Tk):
             self.axes_popup.lift()
         else:
             self.axes_popup = AxesPopup(self, self.apply_axes, self.use_view,
-                                        self.settings.get("ticks_in") is True, self.set_ticks_in)
+                                        self.settings.get("ticks_in") is True, self.set_ticks_in,
+                                        self.auto_axis_text)
             self._undo_keys(self.axes_popup)
         self._show_axes()
 
@@ -1508,8 +1518,11 @@ class Plotter(tk.Tk):
             if value is None or np.isfinite(value):  # inf or nan would break drawing
                 setattr(p, name, value)
         problem = ""
+        auto = self.auto_text.get(self.selected, {})
         for name, _ in AxesPopup.TEXTS:
             text = typed[name].strip()
+            if getattr(p, name) is None and text == plain(auto.get(name, "")):
+                continue  # still the automatic text, as shown: keep it automatic
             why = text_problem(text) if text else ""
             if why:  # keep the old text (shown again below)
                 problem = f"Can't draw that {name.replace('_', ' ')}: {plain(why)}"
@@ -1528,6 +1541,11 @@ class Plotter(tk.Tk):
         self._redraw_selected(keep="")
         if problem:  # after the redraw, which clears the status
             self._say(problem, error=True)
+
+    def auto_axis_text(self, name):
+        """The axes editor's Auto: back to the automatic title or label."""
+        setattr(self.panel, name, None)
+        self._redraw_selected(keep="xy")
 
     def set_ticks_in(self, inward):
         """Point every panel's ticks inward, or back out, and remember it."""
@@ -1923,7 +1941,8 @@ class Plotter(tk.Tk):
                                        min(max(width, 1.2), 2.0), size=(40, 14))
         self.style_button["image"] = self.style_image
         if self.style_popup and self.style_popup.winfo_exists():
-            self.style_popup.show(line, colour, move_picker)
+            auto = plain(self.auto_names.get(self.selected, {}).get(self.panel.selected, ""))
+            self.style_popup.show(line, colour, move_picker, auto)
 
     def open_style(self):
         if self.style_popup and self.style_popup.winfo_exists():
@@ -1943,9 +1962,12 @@ class Plotter(tk.Tk):
             self.merging = False
             return
         l, problem = self.panel.line, ""
-        label = settings.pop("label", None)
-        if label is not None:
-            if label and (why := text_problem(label)):
+        if "label" in settings:  # None: Auto; else the name typed, "" for none
+            label = settings.pop("label")
+            auto = plain(self.auto_names.get(self.selected, {}).get(self.panel.selected, ""))
+            if l.label is None and label == auto:
+                pass  # still the automatic name, as shown: keep it automatic
+            elif label and (why := text_problem(label)):
                 problem = f"Can't draw that name: {plain(why)}"
             else:
                 l.label = label

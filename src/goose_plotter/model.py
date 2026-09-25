@@ -53,7 +53,7 @@ class Line:
     width: float | None = None  # None: auto_width
     marker: str = ""  # a key of MARKERS
     marker_size: float | None = None  # None: AUTO_MARKER_SIZE
-    label: str = ""  # its name in the legend; "": the automatic one
+    label: str | None = None  # its name in the legend; None: the automatic one, "": none
     shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing, fitting) as last drawn
     error: str = ""  # why the last draw failed, if it did
 
@@ -120,10 +120,10 @@ class Panel:
     x_max: float | None = None
     y_min: float | None = None
     y_max: float | None = None
-    # Typed text, "" for the automatic one; matplotlib mathtext like $B$ works.
-    title: str = ""
-    x_label: str = ""
-    y_label: str = ""
+    # Typed text; None for the automatic one, "" for none. Mathtext like $B$ works.
+    title: str | None = None
+    x_label: str | None = None
+    y_label: str | None = None
     legend: str = "auto"  # a key of LEGENDS
     grid: str = "major"  # a key of GRIDS
     grid_axis: str = "both"  # a key of GRID_AXES
