@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -13,7 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from goose_plotter.axis_functions import apply_function, is_identity, rename
-from goose_plotter import background, derivative, session, smoothing, spectrum, theme
+from goose_plotter import background, derivative, session, smoothing, spectrum, splicing, theme
 from goose_plotter.columns import label, lookup, with_unit, without_unit
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC, X_UNITS,
                                Link, Panel, clear_ranges, legend_labels, line_colours, shared)
@@ -115,7 +116,8 @@ class Plotter(tk.Tk):
         self.style_popup = None
         self.axes_popup = None
         self.save_popup = None
-        self.picker = None  # the SpanSelector while a fit range is being dragged
+        self.picker = None  # the SpanSelector while a fit or cut range is being dragged
+        self.pick_target = "fit"  # which range it sets: "fit" or "cut"
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
         self.link_pick = None  # cell while the user clicks a panel to link it to
         self.links = {}  # frozenset of two panel ids -> Link; see _link_partners
@@ -247,9 +249,11 @@ class Plotter(tk.Tk):
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
         self.tabs = {}
-        # Equal shares of the column's width.
-        for i, name in enumerate(("Process", "Operations", "Linking")):
-            strip.columnconfigure(i, weight=1, uniform="tab")
+        # The column's width shared by the names' widths (equal quarters would
+        # cut off "Operations"); width 1, so the strip never widens the column.
+        font = tkfont.Font(self, font=ttk.Style().lookup("Tab.Toolbutton", "font") or "TkDefaultFont")
+        for i, name in enumerate(("Process", "Splicing", "Operations", "Linking")):
+            strip.columnconfigure(i, weight=font.measure(name) + 8)  # + the padding
             ttk.Radiobutton(strip, text=name, value=name, variable=self.tab, width=1,
                             style="Tab.Toolbutton", command=self._show_tab).grid(
                 row=0, column=i, sticky="ew", padx=(0 if i == 0 else 2, 0))
@@ -257,6 +261,7 @@ class Plotter(tk.Tk):
         # Smoothing's and FFT's toggles add the 10 px above them.
         self._smoothing_box(self.tabs["Process"])
         self._background_box(self.tabs["Process"])
+        self._splicing_box(self.tabs["Splicing"])
         self._fft_box(self.tabs["Operations"])
         self._derivative_box(self.tabs["Operations"])
         self._link_box(self.tabs["Linking"])
@@ -597,6 +602,34 @@ class Plotter(tk.Tk):
                 box.bind(key, lambda _: self.apply_controls())
         self.fit_mode.show = body.refresh
 
+    def _splicing_box(self, parent):
+        """Cut the selected line to an x range, or cut a range out of it. No
+        toggle, as it has the Splicing tab to itself."""
+        self.cut_mode = tk.StringVar(value=splicing.MODES[""])
+        self.cut_from, self.cut_to = tk.StringVar(), tk.StringVar()
+        body = ttk.Frame(parent)
+        body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
+        mode = ttk.Combobox(body, textvariable=self.cut_mode, state="readonly", width=14,
+                            values=list(splicing.MODES.values()))
+        mode.pack(anchor=tk.W, pady=(2, 0))
+        mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(row, text="x").pack(side=tk.LEFT)
+        start = ttk.Entry(row, textvariable=self.cut_from, width=7)
+        start.pack(side=tk.LEFT, padx=(4, 4))
+        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        end = ttk.Entry(row, textvariable=self.cut_to, width=7)
+        end.pack(side=tk.LEFT, padx=(4, 6))
+        ttk.Button(row, text="Pick", width=5,
+                   command=lambda: self.pick_range("cut")).pack(side=tk.LEFT)
+        for box in (start, end):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_controls())
+        for text in ("in the plotted x; a blank end: no limit",
+                     "before fits, smoothing, FFT; Off to widen"):
+            ttk.Label(body, text=text, foreground=theme.HINT).pack(anchor=tk.W)
+
     def _fft_box(self, parent):
         """A collapsed 'FFT' toggle: make an FFT panel of this one, or set one up."""
         self.fft_window, self.fft_pad, self.f_max = tk.StringVar(), tk.StringVar(), tk.StringVar()
@@ -792,9 +825,10 @@ class Plotter(tk.Tk):
         self.sync_vars = {}
         names = {"run": "Dataset", "x": "X axis", "x_fn": "X function", "y": "Y axis",
                  "y_fn": "Y function", "colour": "Colour", "smoothing": "Smoothing",
-                 "background": "Background", "style": "Line style"}
+                 "background": "Background", "style": "Line style", "cut": "Splicing"}
         places = {"run": (0, 0), "colour": (0, 1), "x": (1, 0), "y": (1, 1), "x_fn": (2, 0),
-                  "y_fn": (2, 1), "smoothing": (3, 0), "background": (3, 1), "style": (4, 0)}
+                  "y_fn": (2, 1), "smoothing": (3, 0), "background": (3, 1), "style": (4, 0),
+                  "cut": (4, 1)}
         for key in SYNC:
             var = self.sync_vars[key] = tk.BooleanVar()
             row, col = places[key]
@@ -951,6 +985,9 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
+        self.cut_mode.set(splicing.MODES[l.cut])
+        self.cut_from.set("" if l.cut_from is None else f"{l.cut_from:.12g}")
+        self.cut_to.set("" if l.cut_to is None else f"{l.cut_to:.12g}")
         self._show_axes()
         self.fft_window.show()
         self.derivative_order.show()
@@ -971,6 +1008,8 @@ class Plotter(tk.Tk):
                 name += f" · {plain(smoothing.describe(*l.smoothing))}"
             if l.fitting:
                 name += f" · {plain(background.describe(*l.fitting))}"
+            if l.cutting:
+                name += f" · {plain(splicing.describe(*l.cutting))}"
             self.line_list.insert(tk.END, name)
             self.line_list.itemconfigure(tk.END, foreground=colour,
                                          selectforeground=colour)
@@ -1002,14 +1041,17 @@ class Plotter(tk.Tk):
             l.degree = int(self.degree.get())
         except ValueError:
             pass
-        for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to)):
+        l.cut = next(k for k, v in splicing.MODES.items() if v == self.cut_mode.get())
+        for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to),
+                          ("cut_from", self.cut_from), ("cut_to", self.cut_to)):
             try:
                 setattr(l, attr, float(var.get()) if var.get().strip() else None)
             except ValueError:
                 pass
         if (l.x, l.x_fn) != old_x:
             # A window or range in the old x means nothing in the new one.
-            l.span = l.fit_from = l.fit_to = None
+            for attr in X_UNITS:
+                setattr(l, attr, None)
             self._clear_ranges(self.panel.lines, "x")
         if (l.y, l.y_fn, l.background == "subtract") != old_y:
             self._clear_ranges(self.panel.lines, "y")
@@ -1032,6 +1074,8 @@ class Plotter(tk.Tk):
             if self.panel.derived:  # any change reshapes a spectrum or derivative
                 keep = "x"
             others = "x"  # the other panels redrawn plot the same data as before
+            if before[7] != l.cutting:  # a kept zoom could hide the cut, or show nothing
+                keep = others = ""
         self._redraw_selected(keep, others)
 
     def _redraw_selected(self, keep="", others="x", merge=False):
@@ -1163,7 +1207,11 @@ class Plotter(tk.Tk):
             df = self._load(l)
             x, x_label = self._axis(df, l.x, l.x_fn)
             y, y_label = self._axis(df, l.y, l.y_fn)
-            # Background first, so the fit sees the unsmoothed data and
+            # The cut first: everything after sees only what's left.
+            stage = "Splicing"
+            if l.cutting:
+                x, y = splicing.cut(x, y, *l.cutting)
+            # Background next, so the fit sees the unsmoothed data and
             # smoothing then works on what's left.
             stage = "Background"
             if l.fitting:
@@ -1184,7 +1232,7 @@ class Plotter(tk.Tk):
     @staticmethod
     def _data_key(l):
         """What a line's data depends on: its settings through smoothing."""
-        return l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting
+        return l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting, l.cutting
 
     def _prune_cache(self):
         """Keep only the data of lines still in the panels."""
@@ -1237,7 +1285,7 @@ class Plotter(tk.Tk):
                 y_label = (derivative.LABELS[p.operation],) * 2
             # What's on screen, so Save names the plot shown rather than
             # whatever is typed but not yet applied.
-            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting)
+            l.shown = (l.run, l.x, l.x_fn, l.y, l.y_fn, l.smoothing, l.fitting, l.cutting)
             (artist,) = ax.plot(x, y, color=colour, **l.plot_style())
             self.artists[cell][artist] = i
             drawn.append(l)
@@ -1404,7 +1452,8 @@ class Plotter(tk.Tk):
         for l in p.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
-            l.span = l.fit_from = l.fit_to = None  # in the old x; meaningless now
+            for attr in X_UNITS:  # in the old x; meaningless now
+                setattr(l, attr, None)
         self._sync_inputs(self.selected)
         self._redraw_selected(others="")
 
@@ -1680,7 +1729,8 @@ class Plotter(tk.Tk):
                     setattr(mine, attr, getattr(theirs, attr))
                 if key in ("x", "x_fn") and (mine.x, mine.x_fn) != old_x:
                     # In the old x; x comes before the keys that could set them.
-                    mine.span = mine.fit_from = mine.fit_to = None
+                    for attr in X_UNITS:
+                        setattr(mine, attr, None)
                     self._clear_ranges(lines, "x")
             new_y = (mine.y, mine.y_fn, mine.background)
             if new_y[:2] != old_y[:2] or (new_y[2] == "subtract") != (old_y[2] == "subtract"):
@@ -1802,23 +1852,26 @@ class Plotter(tk.Tk):
 
     # --- fit range --------------------------------------------------------
 
-    def pick_range(self):
-        """Drag across the selected panel to set the selected line's fit range."""
+    def pick_range(self, target="fit"):
+        """Drag across the selected panel to set the selected line's fit range,
+        or with `target` "cut" its cut range."""
         self.stop_picking()
         ax = self.axes[self.selected]
+        what = "fit" if target == "fit" else "cut"
         if self.panel.derived:
-            self._say(f"Pick the fit range on the data panel, not its "
+            self._say(f"Pick the {what} range on the data panel, not its "
                       f"{self._kind(self.panel.operation)}.", error=True)
             return
         if not self.panel.line.shown:
-            self._say("Plot the line first, then pick its fit range.", error=True)
+            self._say(f"Plot the line first, then pick its {what} range.", error=True)
             return
         if self.toolbar.mode:
             self._say("Turn off the toolbar's zoom or pan first.", error=True)
             return
+        self.pick_target = target
         self.picker = SpanSelector(ax, self._picked, "horizontal", useblit=True,
                                    props={"facecolor": SELECTED, "alpha": 0.3})
-        self._say("Drag across the plot to set the fit range; Esc cancels.")
+        self._say(f"Drag across the plot to set the {what} range; Esc cancels.")
 
     def _picked(self, start, end):
         # After the selector has finished its own handling of the release,
@@ -1829,7 +1882,14 @@ class Plotter(tk.Tk):
         self.stop_picking()
         if start == end:  # a click, not a drag
             return
-        # 5 significant figures: plenty for a fit range, and tidy in the boxes.
+        # 5 significant figures: plenty for a range, and tidy in the boxes.
+        if self.pick_target == "cut":
+            self.cut_from.set(f"{start:.5g}")
+            self.cut_to.set(f"{end:.5g}")
+            if not self.panel.line.cut:  # picking a range means cutting to it
+                self.cut_mode.set(splicing.MODES["keep"])
+            self.apply_controls()
+            return
         self.fit_from.set(f"{start:.5g}")
         self.fit_to.set(f"{end:.5g}")
         self.apply_controls()
@@ -2085,8 +2145,9 @@ class Plotter(tk.Tk):
         first = self.panels[0, 0].lines[0]
         if not first.shown:
             return ""
-        run, y, x, smoothed, fitted = first.parts()
-        tail = f"_{background.file_part(*fitted)}" if fitted else ""
+        run, y, x, smoothed, fitted, cut = first.parts()
+        tail = f"_{splicing.file_part(*cut)}" if cut else ""
+        tail += f"_{background.file_part(*fitted)}" if fitted else ""
         tail += f"_{smoothing.file_part(*smoothed)}" if smoothed else ""
         corner = self.panels[0, 0]
         tail += f"_{corner.operation}" if corner.derived else ""  # _fft, _d1 or _d2

@@ -32,6 +32,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `model.py` | `Line` and `Panel`, colours, legend text, shared axis labels |
 | `smoothing.py` | moving average, median, Savitzky–Golay; windows in points or x |
 | `background.py` | polynomial fit in x, shown or subtracted |
+| `splicing.py` | cutting a line to an x range, or a range out of it |
 | `spectrum.py` | FFT of a line against its plotted x, for FFT panels; `even_grid`, the binning it shares |
 | `derivative.py` | first and second derivatives on `even_grid`, for derivative panels |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
@@ -45,13 +46,17 @@ mirror. If that folder isn't around this repo, use whatever data folder
 `Plotter._draw_panel`, per `Line`, via `_line_data`:
 
 1. read the columns, apply the axis functions (`_axis`)
-2. background (`background.apply`): fit on the unsmoothed data
-3. smoothing (`smoothing.smooth`), on what's left
-4. in a derived panel only, `spectrum.spectrum` or `derivative.derivative` of
+2. the cut (`splicing.cut`): a kept range drops the rows outside it, a
+   removed one turns the rows inside to NaN in x and y, so it's drawn as a
+   gap and fits and x-unit windows leave it out (SG in points still
+   interpolates across it, as across any NaN)
+3. background (`background.apply`): fit on the unsmoothed data
+4. smoothing (`smoothing.smooth`), on what's left
+5. in a derived panel only, `spectrum.spectrum` or `derivative.derivative` of
    that against x
-5. one `ax.plot` call
+6. one `ax.plot` call
 
-`_line_data` caches steps 1–3 per line, keyed on the line's settings, so a
+`_line_data` caches steps 1–4 per line, keyed on the line's settings, so a
 data panel and its derived panels do the work once; `_reload_folder` clears it.
 
 Keep that order. Things that depend on it:
@@ -61,7 +66,7 @@ Keep that order. Things that depend on it:
   a line index. A second artist per line breaks all three; that's why "show
   the fit" is a mode on a copied line, not an overlay.
 - **`Line.shown`** is the tuple of what was last drawn:
-  `(run, x, x_fn, y, y_fn, smoothing, fitting)`. `parts()`, `legend_labels`,
+  `(run, x, x_fn, y, y_fn, smoothing, fitting, cutting)`. `parts()`, `legend_labels`,
   `_default_name` and the zoom logic in `apply_controls` all index into it, so
   a new per-line setting means updating each of them.
 - **Style isn't in `shown`**, on purpose: `Line.style`, `width`, `marker`,
@@ -70,8 +75,8 @@ Keep that order. Things that depend on it:
   width of None means `auto_width` (heavier for a shown fit), and a
   `marker_size` of None `AUTO_MARKER_SIZE`; `apply_controls` only stores the
   box's number if it differs from the auto one it showed.
-- **Settings in x units** (`Line.span`, `fit_from`, `fit_to`) are in the
-  *plotted* x, after its function. They're cleared whenever x or its function
+- **Settings in x units** (`model.X_UNITS`: `Line.span`, `fit_from`,
+  `fit_to`, `cut_from`, `cut_to`) are in the *plotted* x, after its function. They're cleared whenever x or its function
   changes, or on ⇅, since a value in T means nothing in 1/B.
 - Errors are stored in `Line.error` as `"<Stage> error: message"`.
   `_show_error` shows the selected line's under the axes boxes; it runs from
@@ -91,7 +96,7 @@ them (unlinked, deleted, removed by the layout). So:
   derived. `operation` only matters where FFTs and derivatives differ
   (drawing, the Operations boxes, `_default_name`).
 - Derived panels are only made from data panels (no FFT of a derivative),
-  and there's no fit-range picking on them. Putting one on a panel already
+  and there's no fit- or cut-range picking on them. Putting one on a panel already
   derived from the same data just changes its `operation`. **Back to data**
   (`back_to_data`) sets it to "".
 - `_line_data` caches by `_data_key` (the settings through smoothing), not
@@ -130,6 +135,9 @@ objects, and axis ranges and zoom are each panel's own. So:
   selected panel's settings across it.
 - `_tidy_links`, run by `_build_axes`, drops links to panels that are gone
   and clears a derived panel's `source` once no link joins them.
+- Sessions before format 5 have no "cut" in their links' `sync`; `load`
+  adds it to links that shared everything else (derived panels' included),
+  so an FFT still follows its data panel's cut.
 - `session.dump` / `load` carry the links (sorted, so undo compares equal
   states equal); sessions before format 4 had groups (`link_group`, and
   `sync` / `frozen` on each panel), which `load` turns into a link between
@@ -195,6 +203,9 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
+- **The tab strip shares the column's width by the tabs' names**: equal
+  quarters cut off "Operations". Each is `width=1`, so the strip never widens
+  the column.
 - **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
   tab, which would keep the column long. `_show_tab` packs one frame of
   `self.tabs` and hides the others, so the column fits the tab shown.

@@ -87,8 +87,9 @@ keeps them.
 At the top of the controls column, **Files** opens to the folders, Data
 format and sessions (it starts closed once both folders are chosen). Under
 it Dataset, the Lines list and the axes are always shown, and the rest is in
-three tabs: **Process** (Smoothing, Background), **Operations** (FFT,
-Derivative) and **Linking** (Linked data); their sections start open. If
+four tabs: **Process** (Smoothing, Background), **Splicing** (cutting a line
+to part of its x), **Operations** (FFT, Derivative) and **Linking** (Linked
+data); their sections start open. If
 the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
@@ -123,6 +124,17 @@ stay until it's done or cancelled.
   of the line (leave out the parked ends of a sweep); outside it the line
   isn't drawn. **Pick** sets the range by dragging across the plot.
   The fit comes before smoothing.
+- **Splicing**: per line, in its own tab. **Keep range** cuts the line to x
+  from ... to ... (e.g. the part of a sweep with the oscillations);
+  **Remove range** cuts that part out (a glitch, a parked stretch), leaving
+  a gap. Like the fit range it's in the plotted x, after its function, a
+  blank end means no limit, and **Pick** sets it by dragging across the
+  plot (choosing Keep range if the cut was off). The cut comes first, so
+  it's what's drawn and all the background fit, smoothing, FFT and
+  derivative ever see: an FFT of a kept range has its resolution, 1 / (the
+  range's width). With Keep range on only that range is drawn, so to widen
+  it type the new ends or turn it Off first. To only zoom in, without
+  cutting anything, type a range in the axes editor instead.
 - **Line editor**: the box under + and -, which shows the selected line's
   look, opens it. **Colour** (drag in the field and the brightness strip;
   **Automatic** goes back to the sample's colour or a free one), **Line**
@@ -185,7 +197,8 @@ stay until it's done or cancelled.
   panel gets a heavier dashed frame. The chosen link's **Sync** boxes say
   what it shares: **Dataset**, **X axis**, **X function**, **Y axis**, **Y
   function**, **Colour** and **Line style** (line, width, marker and its
-  size) are ticked to start with; **Smoothing** and **Background** aren't.
+  size) are ticked to start with; **Smoothing**, **Background** and
+  **Splicing** aren't.
   The link is the same seen from either panel: panel 1's **Panel 2** tab
   shows the ticks of panel 2's **Panel 1** tab. So e.g. one panel shows the
   raw data, a linked one the same data with the background subtracted, and

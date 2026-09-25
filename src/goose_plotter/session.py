@@ -3,7 +3,7 @@
 from dataclasses import fields
 import math
 
-from goose_plotter import background, smoothing, spectrum
+from goose_plotter import background, smoothing, spectrum, splicing
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, OPERATIONS,
                                  STYLES, SYNC, Line, Link, Panel)
 from goose_plotter.widgets import MAX_GRID
@@ -11,13 +11,15 @@ from goose_plotter.widgets import MAX_GRID
 # 2: derived panels have their own lines, in their data panel's link group.
 # 3: a title, axis label or legend name of None is the automatic one, "" none.
 # 4: links are between pairs of panels, each with its own ticks and freeze.
-VERSION = 4
+# 5: lines can be cut (Splicing), and links can share the cut.
+VERSION = 5
 KEY = "goose_plotter_session"  # the session file's marker, holding VERSION
 # `dump`'s own marker, so `load` reads undo snapshots and files alike; its
 # absence means the layout of version 1, where a derived panel shared its
 # data panel's lines and every panel carried an operation. Before 3, "" was
-# the automatic text; before 4, links were groups, each panel with its ticks.
-FORMAT = 4
+# the automatic text; before 4, links were groups, each panel with its ticks;
+# before 5, there was no cut to share.
+FORMAT = 5
 TEXTS = {Panel: ("title", "x_label", "y_label"), Line: ("label",)}
 
 # Not saved: what the last draw found, and which line the controls edit.
@@ -25,7 +27,7 @@ SKIP = {"shown", "error", "lines", "selected", "source"}
 # Settings that must be one of a menu's keys; anything else gets the default.
 # Per class: a Line's window is smoothing's, in points; a Panel's is the FFT's.
 CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
-                  "style": STYLES, "marker": MARKERS},
+                  "cut": splicing.MODES, "style": STYLES, "marker": MARKERS},
            Panel: {"legend": LEGENDS, "grid": GRIDS, "grid_axis": GRID_AXES,
                    "grid_style": GRID_STYLES, "operation": OPERATIONS, "window": spectrum.WINDOWS,
                    "pad": spectrum.PADDING},
@@ -110,7 +112,7 @@ def load(state):
         raise ValueError(f"a {rows} x {cols} layout is bigger than the plotter allows")
     grid = [(r, c) for r in range(rows) for c in range(cols)]
     fmt = state.get("format")
-    if fmt not in (2, 3, FORMAT):
+    if fmt not in (2, 3, 4, FORMAT):
         panels, groups = _load_old(saved, grid)
         return rows, cols, _blank_is_auto(panels), _group_links(panels, groups)
     panels = {}
@@ -128,10 +130,24 @@ def load(state):
         seen.add(p.id)
     if fmt == FORMAT:
         return rows, cols, panels, _links(state.get("links"), panels)
+    if fmt == 4:
+        return rows, cols, panels, _share_cut(_links(state.get("links"), panels), panels)
     groups = {cell: _group_of(saved.get(cell), old_ticks=False) for cell in panels}
     if fmt == 2:
         panels = _blank_is_auto(panels)
-    return rows, cols, panels, _group_links(panels, groups)
+    return rows, cols, panels, _share_cut(_group_links(panels, groups), panels)
+
+
+def _share_cut(links, panels):
+    """Links saved before format 5 had no cut to share. Those that shared
+    everything else (a derived panel's with its data panel, at least) share
+    it too, so an FFT or derivative still follows its data when it's cut."""
+    derived = {frozenset((p.id, panels[p.source].id)) for p in panels.values()
+               if p.derived and p.source in panels}
+    for pair, link in links.items():
+        if pair in derived or set(SYNC) - {"cut"} <= link.synced:
+            link.sync = " ".join(k for k in SYNC if k in link.synced | {"cut"})
+    return links
 
 
 def _links(saved, panels):

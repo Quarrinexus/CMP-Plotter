@@ -10,17 +10,18 @@ from goose_plotter.axis_functions import file_part
 from goose_plotter.columns import sample_of
 from goose_plotter.datasets import describe
 from goose_plotter.background import describe as describe_background
+from goose_plotter.splicing import describe as describe_cut
 from goose_plotter.smoothing import describe as describe_smoothing
 
 # What a link between two panels can share, line by line: a Link's `sync`
 # names the keys it shares.
 SYNC = {"run": ("run",), "x": ("x",), "x_fn": ("x_fn",), "y": ("y",), "y_fn": ("y_fn",),
-        "colour": ("colour",),
+        "colour": ("colour",), "cut": ("cut", "cut_from", "cut_to"),
         "smoothing": ("smooth", "window", "in_x", "span", "order"),
         "background": ("background", "degree", "fit_from", "fit_to"),
         "style": ("style", "width", "marker", "marker_size")}
 SYNC_DEFAULT = "run x x_fn y y_fn colour style"
-X_UNITS = ("span", "fit_from", "fit_to")  # settings in the plotted x
+X_UNITS = ("span", "fit_from", "fit_to", "cut_from", "cut_to")  # settings in the plotted x
 
 AUTO_MARKER_SIZE = 3.0  # matplotlib's markersize, in points
 
@@ -48,6 +49,9 @@ class Line:
     fit_from: float | None = None  # the fit's x range; None: no limit
     fit_to: float | None = None
     order: int = 2  # Savitzky–Golay polynomial order
+    cut: str = ""  # a key of splicing.MODES; "" for off
+    cut_from: float | None = None  # the cut's x range; None: no limit
+    cut_to: float | None = None
     colour: str | None = None  # None: picked automatically, see line_colours
     # How it's drawn; not in `shown`, so changing them keeps the zoom.
     style: str = "auto"  # a key of STYLES
@@ -55,7 +59,7 @@ class Line:
     marker: str = ""  # a key of MARKERS
     marker_size: float | None = None  # None: AUTO_MARKER_SIZE
     label: str | None = None  # its name in the legend; None: the automatic one, "": none
-    shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing, fitting) as last drawn
+    shown: tuple | None = None  # (run, x, x_fn, y, y_fn, smoothing, fitting, cutting) as last drawn
     error: str = ""  # why the last draw failed, if it did
 
     def copy(self):
@@ -91,10 +95,17 @@ class Line:
             return None
         return (self.background, self.degree, self.fit_from, self.fit_to)
 
+    @property
+    def cutting(self):
+        """(mode, cut_from, cut_to), or None when the line isn't cut."""
+        if not self.cut or (self.cut_from is None and self.cut_to is None):
+            return None
+        return (self.cut, self.cut_from, self.cut_to)
+
     def parts(self):
-        """(run, y part, x part, smoothing, fitting) as they'd appear in a filename."""
-        run, x, x_fn, y, y_fn, smoothed, fitted = self.shown
-        return run, file_part(y_fn, y), file_part(x_fn, x), smoothed, fitted
+        """(run, y part, x part, smoothing, fitting, cutting) as they'd appear in a filename."""
+        run, x, x_fn, y, y_fn, smoothed, fitted, cut = self.shown
+        return run, file_part(y_fn, y), file_part(x_fn, x), smoothed, fitted, cut
 
 
 @dataclass
@@ -213,11 +224,11 @@ def line_colours(panel, samples):
 def legend_labels(lines):
     """Legend text naming only what differs between the lines."""
     parts = [l.parts() for l in lines]
-    differs = [len({p[i] for p in parts}) > 1 for i in range(5)]
+    differs = [len({p[i] for p in parts}) > 1 for i in range(6)]
     if not any(differs[:3]):
         differs[1] = True  # identical, or only processed differently: say what's on y
     labels = []
-    for run, y, x, smoothed, fitted in parts:
+    for run, y, x, smoothed, fitted, cut in parts:
         bits = [describe(run)] if differs[0] else []
         if differs[1]:
             bits.append(y)
@@ -227,6 +238,8 @@ def legend_labels(lines):
             bits.append(describe_smoothing(*smoothed))
         if differs[4] and fitted:
             bits.append(describe_background(*fitted))
+        if differs[5] and cut:
+            bits.append(describe_cut(*cut))
         labels.append(" · ".join(bits))
     return labels
 
