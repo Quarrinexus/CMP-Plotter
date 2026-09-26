@@ -2064,12 +2064,21 @@ class Plotter(tk.Tk):
                 clear_data_ranges(p, axes)  # and those Undo would bring back
 
     def _sync_inputs(self, cell):
-        """Copy `cell`'s lines' settings to the panels linked directly to it, over
-        each link that isn't frozen, as far as that link shares them."""
-        for other in self._link_partners(cell):
-            link = self.links[self._pair(cell, other)]
-            if not link.frozen:
-                self._sync_across(cell, other, link)
+        """Copy `cell`'s lines' settings along its links and on from each panel
+        they reach, so a chain (data; linked to it, the background subtracted;
+        that one's FFT) stays in step. Each link that isn't frozen passes on
+        what it shares, from the side nearer `cell`; each panel takes them
+        once, by the shortest way, and a frozen link stops them."""
+        reached, todo = {cell}, [cell]
+        while todo:
+            source = todo.pop(0)
+            for other in self._link_partners(source):
+                link = self.links[self._pair(source, other)]
+                if other in reached or link.frozen:
+                    continue
+                self._sync_across(source, other, link)
+                reached.add(other)
+                todo.append(other)
 
     def _sync_across(self, cell, other, link):
         """Copy `cell`'s lines' settings that `link` shares to `other`'s, line by line."""

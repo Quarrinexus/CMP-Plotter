@@ -224,9 +224,10 @@ stay until it's done or cancelled.
   raw data, a linked one the same data with the background subtracted, and
   another that smoothed; or untick Y axis to plot another column against
   the same x. Ticking a box sends the selected panel's setting across.
-  Settings only cross links directly: with 2 linked to 1 and to 3 (but 1
-  not to 3), a change in 1 reaches 2 and stops there; link 1 and 3 too to
-  keep them in step. Adding or removing a line, though, happens in every
+  Settings go on along chains of links, each link passing on what it
+  shares: with 1 linked to 2 (sharing the axes) and 2 to its FFT in 3, a new
+  Y axis in 1 reaches 2 and then the FFT, while 2's background stays its own
+  and still reaches the FFT. A frozen link stops them. Adding or removing a line, though, happens in every
   panel joined through links, so lines stay paired. Fit ranges and x-unit
   windows only cross between panels with the same x. FFT and derivative
   panels are linked to their data panel, with every box ticked. Axis ranges

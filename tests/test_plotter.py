@@ -405,6 +405,27 @@ def test_clicking_the_plot_tabs(app):
     assert len(app.plots) == 1
 
 
+def test_a_change_goes_down_a_chain_of_links(app):
+    """Data on top, linked to its background subtracted below, and that's FFT
+    under it: a new y on top reaches the FFT, through both links."""
+    plot(app, x_fn="1/x")
+    app.set_layout(2, 1)  # panel 2 starts as a copy of 1
+    app._link((1, 0), (0, 0))  # linked 1-2, sharing the axes, not the background
+    app.selected = (1, 0)
+    app._load_controls()
+    app.fit_mode.set("Subtract")
+    app.apply_controls()
+    app.new_derived_panel("fft")  # panel 3, the FFT of 2
+    fft = app.panels[(2, 0)]
+    app.selected = (0, 0)
+    app._load_controls()
+    app.y.set(next(v for v in app.y.box["values"] if "M011" in v))
+    app.apply_controls()
+    assert app.panels[(1, 0)].line.y == "M011_AH"
+    assert fft.line.y == "M011_AH" and fft.line.background == "subtract"
+    assert app.panels[(0, 0)].line.background == ""  # 2-3 shares it, 1-2 doesn't
+
+
 def test_undo_one_step(app):
     plot(app)
     app.cut_from.set("5")

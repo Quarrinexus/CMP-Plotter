@@ -171,13 +171,15 @@ a `Link`, whose `sync` names the `model.SYNC` keys it shares (read through
 `Link.synced`) and `frozen` pauses it. Each panel has its own `Line`
 objects, and axis ranges and zoom are each panel's own. So:
 
-- Settings cross links directly only. After changing a line's settings,
-  call `_sync_inputs(cell)`, which copies what each unfrozen link from
-  `cell` shares to that partner (`_sync_across`: clearing its x-unit
-  settings if its x changes, and never copying `X_UNITS` between different
-  x); `apply_controls`, `swap`, the line editor and the colour picker do.
-  It doesn't go on from the partner. Keep `SYNC`'s "x" before the keys
-  holding x-unit settings: that clearing runs after x is copied.
+- Settings go along chains of links. After changing a line's settings,
+  call `_sync_inputs(cell)`: breadth first from `cell`, each unfrozen link
+  copies what it shares from the side nearer `cell` to the other
+  (`_sync_across`: clearing its x-unit settings if its x changes, and never
+  copying `X_UNITS` between different x), and each panel reached passes on
+  in turn, once. So data → subtracted copy → its FFT stays in step though
+  only 1-2 and 2-3 are linked. `apply_controls`, `swap`, the line editor
+  and the colour picker call it. Keep `SYNC`'s "x" before the keys holding
+  x-unit settings: that clearing runs after x is copied.
 - Lines stay paired across whole chains: `_tied(cell)` is every panel
   joined to `cell` through links, one after another, and `add_line` /
   `remove_line` change every list in `_group_lists` (those panels'). `_link`
