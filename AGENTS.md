@@ -299,6 +299,11 @@ window. So:
 - **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
   tab, which would keep the column long. `_show_tab` packs one frame of
   `self.tabs` and hides the others, so the column fits the tab shown.
+- **matplotlib's toolbar is repacked** (`_toolbar_to_the_right`): at the top
+  right of the plot, its buttons against the edge and the coordinates just
+  before them (matplotlib packs the buttons at the left). It sorts the
+  parts by type (labels are the coordinates and a filler), so a matplotlib
+  that builds the toolbar differently may need it looked at.
 - **The controls column is a scrolling canvas** (`self.side`) with the Save
   area pinned below it; the scrollbar shows only when the column is taller
   than the window, in a slot that keeps its width either way so the plot

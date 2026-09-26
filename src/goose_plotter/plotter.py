@@ -371,7 +371,8 @@ class Plotter(tk.Tk):
         plot.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot)
         self.toolbar = NavigationToolbar2Tk(self.canvas, plot, pack_toolbar=False)
-        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.toolbar.pack(side=tk.TOP, fill=tk.X)
+        self._toolbar_to_the_right()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self.canvas.mpl_connect("button_press_event", self._on_click)
 
@@ -382,6 +383,21 @@ class Plotter(tk.Tk):
             self._resume(relaunch)
         if profile_error:
             self._say(profile_error, error=True)
+
+    def _toolbar_to_the_right(self):
+        """matplotlib's toolbar at the right: its buttons against the edge, in their
+        usual order, and the cursor's coordinates just before them, growing to
+        the left, so the buttons don't move as the text changes."""
+        parts = self.toolbar.pack_slaves()
+        texts = [w for w in parts if isinstance(w, tk.Label)]  # the coordinates, and a filler
+        tools = [w for w in parts if w not in texts]
+        options = {w: {k: v for k, v in w.pack_info().items() if k != "in"} for w in parts}
+        for w in parts:
+            w.pack_forget()
+        for w in reversed(tools):  # packed from the right, so the last first
+            w.pack(**(options[w] | {"side": tk.RIGHT}))
+        for w in texts:
+            w.pack(**(options[w] | {"side": tk.RIGHT}))
 
     # --- keyboard ---------------------------------------------------------
 
