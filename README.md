@@ -138,6 +138,12 @@ stay until it's done or cancelled.
   resolution, 1 / (the range's width). With Keep ranges on only those are
   drawn, so to pick outside them, turn it Off first. To only zoom in,
   without cutting anything, type a range in the axes editor instead.
+
+  On an **FFT panel**, Splicing cuts the spectrum instead, in F: Pick a
+  stretch of frequency and the plot fits itself to it, an easier zoom than
+  the toolbar's; Remove ranges hides, e.g., the low-frequency end. It's the
+  FFT panel's own, so its data panel and lines aren't cut (cut the data on
+  the data panel). Changing x or its function clears it.
 - **Line editor**: the box under + and -, which shows the selected line's
   look, opens it. **Colour** (drag in the field and the brightness strip;
   **Automatic** goes back to the sample's colour or a free one), **Line**

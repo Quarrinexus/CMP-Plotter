@@ -113,7 +113,11 @@ them (unlinked, deleted, removed by the layout). So:
   derived. `operation` only matters where FFTs and derivatives differ
   (drawing, the Derive tab's boxes, `_default_name`).
 - Derived panels are only made from data panels (no FFT of a derivative),
-  and there's no fit- or cut-range picking on them. Putting one on a panel already
+  and there's no fit-range picking on them, nor cut-range picking on
+  derivative panels. On an FFT panel the Splicing tab edits `Panel.cut` /
+  `Panel.cuts` (`_cut_target`), a cut of the spectrum in F applied after F
+  max, not its lines' cuts, which stay the data's (and follow the data
+  panel through the link); `clear_ranges` clears it with x. Putting one on a panel already
   derived from the same data just changes its `operation`. **Back to data**
   (`back_to_data`) sets it to "".
 - **This panel** (`in_place`) is the exception: it turns a data panel into

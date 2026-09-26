@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 
-from goose_plotter import smoothing, splicing
+from goose_plotter import session, smoothing, splicing
 from conftest import B_HIGH, B_LOW, F, drawn, plot
 
 def test_plots_the_profile_default_axes(app):
@@ -66,6 +66,38 @@ def test_a_kept_range_sets_the_fft_resolution(app):
     assert app.panel.line.cutting == ("keep", ((0.05, 0.15),))
     app.new_derived_panel("fft")
     assert app.axes[(1, 0)].get_title().endswith("ΔF 10")
+
+
+def test_splicing_an_fft_cuts_its_spectrum_in_f(app):
+    plot(app, x_fn="1/x")
+    app.fit_mode.set("Subtract")
+    app.apply_controls()
+    app.new_derived_panel("fft")
+    fft = app.panels[(1, 0)]
+    app.axes[(1, 0)].set_xlim(0, 5000)  # zoomed out: the cut fits the view to it
+    app.cut_from.set("30")
+    app.cut_to.set("70")
+    app.add_cut()
+    frequency, amplitude = drawn(app, (1, 0))
+    assert frequency.min() >= 30 and frequency.max() <= 70
+    assert frequency[np.argmax(amplitude)] == pytest.approx(F, rel=0.05)
+    low, high = app.axes[(1, 0)].get_xlim()
+    assert low > 25 and high < 75
+    assert fft.cuts == ((30.0, 70.0),) and fft.cut == "keep"
+    assert all(not l.cuts for p in app.panels.values() for l in p.lines)  # the data isn't cut
+    assert app.cut_hint["text"].startswith("on an FFT")
+    saved = json.loads(json.dumps(session.dump(app.panels, app.rows, app.cols, app.links)))
+    _, _, panels, _ = session.load(saved)  # as a session file gives it back
+    assert (panels[(1, 0)].cut, panels[(1, 0)].cuts) == ("keep", ((30.0, 70.0),))
+    app.pick_range("cut")  # picking works on an FFT panel
+    assert app.picker is not None
+    app.stop_picking()
+    app.selected = (0, 0)  # the data panel's Splicing is its line's again
+    app._load_controls()
+    assert app.cut_list.size() == 0 and app.cut_mode.get() == splicing.MODES[""]
+    app.x_fn.set("x")  # F in 1/T, not T: the spectrum's cut goes
+    app.apply_controls()
+    assert fft.cuts == ()
 
 
 def test_editing_picking_and_deleting_ranges(app):

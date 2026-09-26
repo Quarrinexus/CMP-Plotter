@@ -145,6 +145,10 @@ class Panel:
     window: str = "hann"  # FFT window, a key of spectrum.WINDOWS
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
+    # FFT panels: the Splicing tab's cut of the spectrum itself, in its F, as a
+    # line's cut is of the data (a key of splicing.MODES, and splicing.tidy ranges).
+    cut: str = ""
+    cuts: tuple = ()
     derivative_window: int = 51  # derivative panels: grid points per fit, odd
     # A data panel turned into its own FFT or derivative ("This panel"): its
     # DATA_VIEW values from before, for Undo. None for any other panel.
@@ -234,6 +238,7 @@ def clear_ranges(panel, axes="xy"):
             setattr(panel, name, None)
     if "x" in axes:
         panel.region = ()
+        panel.cuts = ()  # an FFT's cut, in its F
     panel.points = ()
 
 

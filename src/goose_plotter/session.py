@@ -31,12 +31,13 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
                   "cut": splicing.MODES, "style": STYLES, "marker": MARKERS},
            Panel: {"legend": LEGENDS, "grid": GRIDS, "grid_axis": GRID_AXES,
                    "grid_style": GRID_STYLES, "operation": OPERATIONS, "window": spectrum.WINDOWS,
+                   "cut": splicing.MODES,
                    "pad": spectrum.PADDING},
            Link: {}}
 
 # Fields holding a list, and what makes the saved one fit, per class as for CHOICES.
 TIDY = {Line: {"cuts": splicing.tidy},
-        Panel: {"data_view": tidy_data_view, "region": measure.tidy_region,
+        Panel: {"data_view": tidy_data_view, "cuts": splicing.tidy, "region": measure.tidy_region,
                 "points": measure.tidy_points},
         Link: {}}
 

@@ -748,14 +748,17 @@ class Plotter(tk.Tk):
         self.cut_list["yscrollcommand"] = scroll.set
         self.cut_list.bind("<<ListboxSelect>>", lambda _: self._choose_cut())
         for text in ("in the plotted x; a blank end: no limit",
-                     "click a range, then Enter changes it",
-                     "cut before fits, smoothing and FFT"):
+                     "click a range, then Enter changes it"):
             ttk.Label(body, text=text, foreground=theme.HINT).pack(anchor=tk.W)
+        self.cut_hint = ttk.Label(body, foreground=theme.HINT)  # which it cuts
+        self.cut_hint.pack(anchor=tk.W)
 
     def _show_cuts(self):
-        """Fill the Splicing list with the selected line's ranges, and the boxes
-        with the chosen one."""
-        l = self.panel.line
+        """Fill the Splicing list with the selected line's ranges (an FFT panel's
+        spectrum's), and the boxes with the chosen one."""
+        l = self._cut_target()
+        self.cut_hint["text"] = ("on an FFT: cuts the spectrum, in F" if l is self.panel
+                                 else "cut before fits, smoothing and FFT")
         if l is not self.cut_owner:  # another line: start at its first range
             self.cut_owner, self.cut_index = l, 0 if l.cuts else None
             self.cut_from.set("")
@@ -780,6 +783,12 @@ class Plotter(tk.Tk):
             self.cut_index = chosen[0]
             self._show_cuts()
 
+    def _cut_target(self):
+        """What the Splicing tab cuts: on an FFT panel its spectrum (the Panel's
+        cut, in F, so picking a range there is an easy zoom), else the selected
+        line's data."""
+        return self.panel if self.panel.operation == "fft" else self.panel.line
+
     def _typed_cut(self):
         """The range typed in the Splicing boxes, or None, saying why, if it isn't one."""
         ends = []
@@ -799,12 +808,13 @@ class Plotter(tk.Tk):
         return tuple(ends)
 
     def add_cut(self, pair=None, replace=False):
-        """Add a range to the selected line's cut: `pair`, else the typed one.
-        `replace`: in place of the range chosen in the list (Enter), if there is one."""
+        """Add a range to the selected line's cut (an FFT panel's spectrum's):
+        `pair`, else the typed one. `replace`: in place of the range chosen in
+        the list (Enter), if there is one."""
         pair = pair or self._typed_cut()
         if pair is None:
             return
-        l = self.panel.line
+        l = self._cut_target()
         cuts = list(l.cuts)
         if replace and self.cut_index is not None:
             del cuts[self.cut_index]
@@ -818,8 +828,9 @@ class Plotter(tk.Tk):
             self._say("Keeping the range; choose Remove ranges to cut it out instead.")
 
     def delete_cut(self):
-        """Delete the range chosen in the list from the selected line's cut."""
-        l = self.panel.line
+        """Delete the range chosen in the list from the selected line's cut
+        (an FFT panel's spectrum's)."""
+        l = self._cut_target()
         if self.cut_index is None:
             self._say("Click a range in the list to delete it.", error=True)
             return
@@ -1234,7 +1245,7 @@ class Plotter(tk.Tk):
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
-        self.cut_mode.set(splicing.MODES[l.cut])
+        self.cut_mode.set(splicing.MODES[self._cut_target().cut])
         self._show_cuts()
         self._show_axes()
         self.fft_window.show()
@@ -1290,7 +1301,9 @@ class Plotter(tk.Tk):
             l.degree = int(self.degree.get())
         except ValueError:
             pass
-        l.cut = next(k for k, v in splicing.MODES.items() if v == self.cut_mode.get())
+        spectrum_cut = (self.panel.cut, self.panel.cuts)
+        self._cut_target().cut = next(k for k, v in splicing.MODES.items()
+                                     if v == self.cut_mode.get())
         for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to)):
             try:
                 setattr(l, attr, float(var.get()) if var.get().strip() else None)
@@ -1323,6 +1336,8 @@ class Plotter(tk.Tk):
             others = "x"  # the other panels redrawn plot the same data as before
             if before[7] != l.cutting:  # a kept zoom could hide the cut, or show nothing
                 keep = others = ""
+            if (self.panel.cut, self.panel.cuts) != spectrum_cut:  # an FFT's: fit to it
+                keep = ""
         self._redraw_selected(keep, others)
 
     def _redraw_selected(self, keep="", others="x", merge=False):
@@ -1518,6 +1533,13 @@ class Plotter(tk.Tk):
                 if p.f_max:
                     below = frequency <= p.f_max
                     frequency, amplitude = frequency[below], amplitude[below]
+                if p.cut and p.cuts:  # the Splicing tab's, on the spectrum
+                    try:
+                        frequency, amplitude = splicing.cut(frequency, amplitude, p.cut, p.cuts)
+                    except ValueError as err:
+                        l.error = f"Splicing error: {err}"
+                        errors.append(l.error)
+                        continue
                 resolutions.append(spectrum.resolution(x[np.isfinite(y)]))
                 x, y = frequency, amplitude
                 unit, _ = lookup(self.profile.units, l.x)
@@ -2146,7 +2168,8 @@ class Plotter(tk.Tk):
         self.stop_picking()
         ax = self.axes[self.selected]
         what = {"fit": "fit", "cut": "cut", "measure": "measuring"}[target]
-        if self.panel.derived and target != "measure":
+        if target == "fit" and self.panel.derived or (
+                target == "cut" and self.panel.derived and self.panel.operation != "fft"):
             self._say(f"Pick the {what} range on the data panel, not its "
                       f"{self._kind(self.panel.operation)}.", error=True)
             return
