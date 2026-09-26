@@ -5,7 +5,7 @@ import math
 
 from goose_plotter import background, smoothing, spectrum, splicing
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, OPERATIONS,
-                                 STYLES, SYNC, Line, Link, Panel)
+                                 STYLES, SYNC, Line, Link, Panel, tidy_data_view)
 from goose_plotter.widgets import MAX_GRID
 
 # 2: derived panels have their own lines, in their data panel's link group.
@@ -35,7 +35,7 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
            Link: {}}
 
 # Fields holding a list, and what makes the saved one fit, per class as for CHOICES.
-TIDY = {Line: {"cuts": splicing.tidy}, Panel: {}, Link: {}}
+TIDY = {Line: {"cuts": splicing.tidy}, Panel: {"data_view": tidy_data_view}, Link: {}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.

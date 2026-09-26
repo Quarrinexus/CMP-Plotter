@@ -16,8 +16,9 @@ from PIL import Image, ImageDraw, ImageTk
 from goose_plotter.axis_functions import apply_function, is_identity, rename
 from goose_plotter import background, derivative, session, smoothing, spectrum, splicing, theme
 from goose_plotter.columns import label, lookup, with_unit, without_unit
-from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC, X_UNITS,
-                               Link, Panel, clear_ranges, legend_labels, line_colours, shared)
+from goose_plotter.model import (DATA_VIEW, GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC,
+                               X_UNITS, Link, Panel, clear_data_ranges, clear_ranges,
+                               legend_labels, line_colours, shared, swap_data_view)
 from goose_plotter.profile import load_profile, save_format
 from goose_plotter.datasets import (FormatError, describe, detect_format, find_datasets,
                                   load_dataset, read_lines, run_number)
@@ -293,9 +294,9 @@ class Plotter(tk.Tk):
         buttons.columnconfigure((0, 1), weight=1, uniform="button")
         self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
         for i, button in enumerate((
-                ttk.Button(buttons, text="Layout...", command=self.choose_layout),
+                ttk.Button(buttons, text="Layout", command=self.choose_layout),
                 self.delete_button,
-                ttk.Button(buttons, text="Options...", command=self.open_save_options),
+                ttk.Button(buttons, text="Saving Options", command=self.open_save_options),
                 ttk.Button(buttons, text="Save figure", command=self.save))):
             row, col = divmod(i, 2)
             button.grid(row=row, column=col, sticky="ew", padx=(0, 3) if col == 0 else (3, 0),
@@ -738,11 +739,13 @@ class Plotter(tk.Tk):
 
         def text(is_open):
             p = self.panel
-            used = (f": of panel {self._number(p.source)}"
-                    if p.source is not None and p.operation == "fft" and not is_open else "")
+            used = ("" if is_open or p.operation != "fft" else
+                    ": this panel" if p.data_view is not None else
+                    f": of panel {self._number(p.source)}" if p.source is not None else "")
             return f"FFT{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
+        show_here = self._here_button(body, lambda: "fft")
         # For a data panel: the two ways to make its FFT.
         make = ttk.Frame(body)
         self._make_buttons(make, lambda: "fft")
@@ -768,8 +771,7 @@ class Plotter(tk.Tk):
         f_max = ttk.Entry(row, textvariable=self.f_max, width=8)
         f_max.pack(side=tk.LEFT, padx=(4, 8))
         ttk.Label(row, text="blank: all", foreground=theme.HINT).pack(side=tk.LEFT)
-        ttk.Button(settings, text="Back to data", command=self.back_to_data).pack(
-            anchor=tk.W, pady=(6, 0))
+        back = ttk.Button(settings, text="Back to data", command=self.back_to_data)
         for box in (window, pad):
             box.bind("<<ComboboxSelected>>", lambda _: self.apply_fft())
         for key in ("<Return>", "<KP_Enter>"):
@@ -786,11 +788,15 @@ class Plotter(tk.Tk):
                 if frame is not shown:
                     frame.pack_forget()
             shown.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if shown is other else 0)
+            show_here(p)
             if shown is make:
                 return
             if shown is other:
-                other["text"] = f"Select {self._data_panel_name(p)} to make its FFT."
+                other["text"] = ("Click This panel for its FFT instead."
+                                 if p.data_view is not None else
+                                 f"Select {self._data_panel_name(p)} to make its FFT.")
                 return
+            self._show_back(back, p)
             source_label["text"] = f"FFT of {self._derived_from(p)}"
             self.fft_window.set(spectrum.WINDOWS[p.window])
             self.fft_pad.set(str(p.pad))
@@ -808,6 +814,45 @@ class Plotter(tk.Tk):
                    command=lambda: self.existing_derived_panel(operation())).pack(
             side=tk.LEFT, padx=(6, 0))
 
+    def _here_button(self, parent, operation):
+        """'This panel', to turn the selected data panel into the derived panel
+        `operation()` names in place, and then Undo. Returns what updates it
+        for a panel; it stays at the top of its section either way."""
+        row = ttk.Frame(parent)
+        row.pack(anchor=tk.W, fill=tk.X, pady=(4, 0))
+        button = ttk.Button(row)
+        button.pack(side=tk.LEFT)
+        hint = ttk.Label(row, foreground=theme.HINT)
+        hint.pack(side=tk.LEFT, padx=(6, 0))
+
+        def undoes(p):  # turned into this section's kind here, so the button undoes it
+            return p.data_view is not None and (p.operation == "fft") == (operation() == "fft")
+
+        def press():
+            if undoes(self.panel):
+                self.undo_in_place()
+            else:
+                self.in_place(operation())
+        button["command"] = press
+
+        def show(p):
+            usable = not p.derived or p.data_view is not None
+            button["text"] = "Undo" if undoes(p) else "This panel"
+            button.state(["!disabled" if usable else "disabled"])
+            hint["text"] = ("back to its data" if undoes(p) else
+                            "" if not usable else
+                            "in place of its data" if not p.derived else
+                            "in its place")
+        return show
+
+    @staticmethod
+    def _show_back(button, p):
+        """'Back to data' for a derived panel, except one This panel made, which has Undo."""
+        if p.data_view is None:
+            button.pack(anchor=tk.W, pady=(6, 0))
+        else:
+            button.pack_forget()
+
     def _derivative_box(self, parent):
         """A 'Derivative' toggle: make a derivative panel of this one, or set one up."""
         self.derivative_order = tk.StringVar(value="d1")  # also the new panel's, for a data panel
@@ -815,9 +860,12 @@ class Plotter(tk.Tk):
 
         def text(is_open):
             p = self.panel
-            used = (f": {derivative.ORDERS[p.operation].lower()} of panel {self._number(p.source)}"
-                    if p.source is not None and p.derived and p.operation != "fft"
-                    and not is_open else "")
+            if is_open or not p.derived or p.operation == "fft":
+                return "Derivative"
+            order = derivative.ORDERS[p.operation].lower()
+            used = (f": {order}, this panel" if p.data_view is not None else
+                    f": {order} of panel {self._number(p.source)}" if p.source is not None
+                    else "")
             return f"Derivative{used}"
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
@@ -831,6 +879,7 @@ class Plotter(tk.Tk):
                                      style="Toolbutton", command=self.apply_derivative)
             button.pack(side=tk.LEFT, padx=(0, 4))
             orders.append(button)
+        show_here = self._here_button(body, self.derivative_order.get)
         # For a data panel: the two ways to make its derivative.
         make = ttk.Frame(body)
         self._make_buttons(make, self.derivative_order.get)
@@ -847,8 +896,7 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="points, odd", foreground=theme.HINT).pack(side=tk.LEFT)
         ttk.Label(settings, text="wider for less noise; 2nd needs more",
                   foreground=theme.HINT).pack(anchor=tk.W)
-        ttk.Button(settings, text="Back to data", command=self.back_to_data).pack(
-            anchor=tk.W, pady=(6, 0))
+        back = ttk.Button(settings, text="Back to data", command=self.back_to_data)
         for key in ("<Return>", "<KP_Enter>"):
             window.bind(key, lambda _: self.apply_derivative())
         # For an FFT panel: where to make a derivative instead.
@@ -863,15 +911,21 @@ class Plotter(tk.Tk):
                 if frame is not shown:
                     frame.pack_forget()
             shown.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if shown is other else 0)
-            for button in orders:  # an FFT panel has no order to choose
-                button.state(["disabled" if shown is other else "!disabled"])
+            # An FFT panel has no order to choose, unless This panel can swap it for one.
+            choose = shown is not other or p.data_view is not None
+            for button in orders:
+                button.state(["!disabled" if choose else "disabled"])
+            show_here(p)
             if shown is other:
-                other["text"] = f"Select {self._data_panel_name(p)} to make its derivative."
+                other["text"] = ("Click This panel for its derivative instead."
+                                 if p.data_view is not None else
+                                 f"Select {self._data_panel_name(p)} to make its derivative.")
             elif derived:
                 self.derivative_order.set(p.operation)
                 source_label["text"] = (f"{derivative.ORDERS[p.operation]} derivative of "
                                         f"{self._derived_from(p)}")
                 self.derivative_window.set(p.derivative_window)
+                self._show_back(back, p)
         self.derivative_order.show = refresh
 
     def _link_box(self, parent):
@@ -1545,6 +1599,7 @@ class Plotter(tk.Tk):
         p = self.panel
         if p.derived:  # a spectrum or derivative of the other axis: nothing like the old one
             clear_ranges(p)
+            swap_data_view(p)  # what Undo brings back swaps as a data panel's would
         else:  # its ranges swap with its axes; linked panels' clear as their x and y change
             p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
             p.x_label, p.y_label = p.y_label, p.x_label
@@ -1563,6 +1618,8 @@ class Plotter(tk.Tk):
 
     def _derived_from(self, p):
         """'panel 1, linked to it' for a derived panel, or what it is without one."""
+        if p.data_view is not None:
+            return "this panel's lines, drawn in their place; Undo brings them back."
         if p.source is None:
             return "its own lines; it no longer follows a panel."
         return f"panel {self._number(p.source)}, linked to it (see Linking)."
@@ -1637,7 +1694,8 @@ class Plotter(tk.Tk):
                 old.operation = operation
         else:
             dependents = [c for c, p in self.panels.items() if p.source == target]
-            if (not old.derived and any(l.shown for l in old.lines)) or dependents:
+            own = not old.derived or old.data_view is not None  # its lines are its own data
+            if (own and any(l.shown for l in old.lines)) or dependents:
                 also = (", and the panels derived from it will stop following it"
                         if dependents else "")
                 if not messagebox.askyesno(
@@ -1650,6 +1708,34 @@ class Plotter(tk.Tk):
                 self.panels[c].source = None
             self.panels[target] = self._derived(source, operation)
         self.selected = target
+        self._build_axes()
+        self._load_controls()
+
+    def in_place(self, operation):
+        """Turn the selected data panel into its own FFT or derivative, keeping its
+        typed ranges and texts for Undo; on one turned already, change which it is."""
+        self.stop_picking()
+        p = self.panel
+        if p.data_view is None:
+            if self._derive_source(operation) is None:
+                return
+            p.data_view = tuple(getattr(p, name) for name in DATA_VIEW)
+        elif p.operation == operation:
+            return
+        clear_ranges(p)  # in the data's units, or the other operation's
+        p.title = p.x_label = p.y_label = None
+        p.operation = operation
+        self._build_axes()
+        self._load_controls()
+
+    def undo_in_place(self):
+        """Turn a panel This panel made back into the data panel it was."""
+        p = self.panel
+        if p.data_view is None:
+            return
+        for name, value in zip(DATA_VIEW, p.data_view):
+            setattr(p, name, value)
+        p.operation, p.data_view = "", None
         self._build_axes()
         self._load_controls()
 
@@ -1688,7 +1774,7 @@ class Plotter(tk.Tk):
         its link group, as a linked data panel."""
         p = self.panel
         if p.derived:
-            p.operation, p.source = "", None
+            p.operation, p.source, p.data_view = "", None, None
             clear_ranges(p)  # in frequency or dy/dx; it's back to plotting the data
             p.title = p.x_label = p.y_label = None
             self._build_axes()
@@ -1804,6 +1890,7 @@ class Plotter(tk.Tk):
         for p in self.panels.values():
             if p.lines is lines:
                 clear_ranges(p, axes)
+                clear_data_ranges(p, axes)  # and those Undo would bring back
 
     def _sync_inputs(self, cell):
         """Copy `cell`'s lines' settings to the panels linked directly to it, over

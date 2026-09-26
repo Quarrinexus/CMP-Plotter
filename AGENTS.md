@@ -115,6 +115,13 @@ them (unlinked, deleted, removed by the layout). So:
   and there's no fit- or cut-range picking on them. Putting one on a panel already
   derived from the same data just changes its `operation`. **Back to data**
   (`back_to_data`) sets it to "".
+- **This panel** (`in_place`) is the exception: it turns a data panel into
+  its own FFT or derivative, with no link and no `source`. `Panel.data_view`
+  keeps its `DATA_VIEW` values (typed ranges and texts) from before, for
+  **Undo** (`undo_in_place`). Its being set is what marks such a panel, so
+  it's saved in sessions (a tuple, via `session.TIDY`), and so it survives
+  the global undo. Such a panel has Undo in place of Back to data; the other
+  section's This panel changes its operation and keeps `data_view`.
 - `_line_data` caches by `_data_key` (the settings through smoothing), not
   by line, so a data panel and its derived panels do the work once; a hit
   also fills in an x-unit span the line hasn't got yet. `_changed` prunes it
@@ -127,7 +134,7 @@ them (unlinked, deleted, removed by the layout). So:
 ## Links
 
 A link joins two panels: `Plotter.links` maps the frozenset of their
-`Panel.id`s (ids, not cells, as Delete panel and Layout... move panels) to
+`Panel.id`s (ids, not cells, as Delete panel and Layout move panels) to
 a `Link`, whose `sync` names the `model.SYNC` keys it shares (read through
 `Link.synced`) and `frozen` pauses it. Each panel has its own `Line`
 objects, and axis ranges and zoom are each panel's own. So:
@@ -165,7 +172,10 @@ objects, and axis ranges and zoom are each panel's own. So:
 the x-unit line settings, so they're cleared the same way: `_clear_ranges`
 when a line's x or y changes, including a linked member's in
 `_sync_inputs`; ⇅ swaps a data panel's (a derived panel's are cleared);
-changing a derived panel's operation, or `back_to_data`, clears them. `_draw_panel`
+changing a derived panel's operation, or `back_to_data`, clears them.
+The ranges a turned panel keeps for Undo (`Panel.data_view`) go the same
+way: `_clear_ranges` clears them too, and ⇅ swaps them (`clear_data_ranges`,
+`swap_data_view`). `_draw_panel`
 applies them after drawing, which turns autoscaling off, so the zoom-keeping
 in `_redraw_selected` treats them as user-set: after changing them, redraw
 with `keep=""` (as `apply_axes` does) or the old range comes back.

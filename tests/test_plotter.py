@@ -148,6 +148,81 @@ def test_derived_panels_follow_every_setting(app):
     assert x.min() >= 5 and x.max() <= 9
 
 
+def buttons(widget):
+    """The texts of the ttk buttons shown in `widget`, top to bottom."""
+    found = []
+    for child in widget.winfo_children():
+        if child.winfo_manager() and child.winfo_class() == "TButton":
+            found.append(child["text"])
+        elif child.winfo_manager():
+            found += buttons(child)
+    return found
+
+
+def test_this_panel_turns_into_its_fft_and_undo_turns_it_back(app):
+    plot(app, x_fn="1/x")
+    app.fit_mode.set("Subtract")
+    app.apply_controls()
+    panel = app.panel
+    panel.x_min, panel.title = 0.05, "My data"
+    app.in_place("fft")
+    assert len(app.panels) == 1 and app.panel is panel and panel.operation == "fft"
+    assert panel.x_min is None and panel.title is None  # in T, not frequency
+    frequency, amplitude = drawn(app)
+    assert frequency[np.argmax(amplitude)] == pytest.approx(F, rel=0.05)
+    derive = buttons(app.tabs["Derive"])
+    assert derive.count("Undo") == 1 and "Back to data" not in derive
+    # The Derivative section's This panel swaps it for a derivative; Undo still
+    # goes back to the data.
+    app.in_place("d1")
+    assert panel.operation == "d1" and buttons(app.tabs["Derive"]).count("Undo") == 1
+    app.undo_in_place()
+    assert panel.operation == "" and panel.data_view is None
+    assert (panel.x_min, panel.title) == (0.05, "My data")
+    assert "Undo" not in buttons(app.tabs["Derive"])
+
+
+def test_this_panel_is_only_for_data_panels(app):
+    plot(app)
+    app.new_derived_panel("fft")
+    app.in_place("d1")
+    assert app.panel.operation == "fft" and app.panel.data_view is None
+    assert "Back to data" in buttons(app.tabs["Derive"])
+
+
+def test_this_panel_survives_undo_and_sessions(app, tmp_path):
+    plot(app)
+    app.panel.y_max = 3.0
+    app.in_place("d2")
+    app.derivative_window.set("101")
+    app.apply_derivative()
+    app.undo()  # the window change, not the turning
+    assert app.panel.operation == "d2" and app.panel.derivative_window == 51
+    assert buttons(app.tabs["Derive"]).count("Undo") == 1
+    path = tmp_path / "s.json"
+    app.save_session(path)
+    app.open_session(path)
+    assert app.panel.data_view == (None, None, None, 3.0, None, None, None)
+    app.undo_in_place()
+    assert app.panel.y_max == 3.0 and not app.panel.derived
+
+
+def test_undo_forgets_ranges_in_an_x_that_changed(app):
+    plot(app)
+    app.panel.x_min, app.panel.y_max, app.panel.x_label = 5.0, 3.0, "B"
+    app.in_place("fft")
+    app.x_fn.set("1/x")  # F needs 1/B; 5 T means nothing there
+    app.apply_controls()
+    app.undo_in_place()
+    assert (app.panel.x_min, app.panel.y_max) == (None, 3.0)
+    app.panel.x_min = 0.1
+    app.in_place("d1")
+    app.swap()
+    app.undo_in_place()
+    assert (app.panel.x_max, app.panel.y_min, app.panel.y_max) == (3.0, 0.1, None)
+    assert app.panel.y_label == "B"
+
+
 def test_undo_one_step(app):
     plot(app)
     app.cut_from.set("5")
@@ -198,4 +273,11 @@ def test_no_tab_widens_the_controls_column(app):
         app._show_tab()
         app.update_idletasks()
         widths[tab] = app.side_inner.winfo_reqwidth()
+    # The Derive tab's This panel row, on panels it has turned.
+    app.tab.set("Derive")
+    app._show_tab()
+    for operation in ("fft", "d2"):
+        app.in_place(operation)
+        app.update_idletasks()
+        widths[f"Derive, {operation} here"] = app.side_inner.winfo_reqwidth()
     assert len(set(widths.values())) == 1, widths

@@ -181,8 +181,14 @@ stay until it's done or cancelled.
   peaks), F max, and **Back to data**, which turns it back into an ordinary
   panel plotting its lines (still linked). Its title gives the frequency resolution,
   ΔF = 1 / (x range).
+
+  **This panel** turns the selected panel into its own FFT instead, with no
+  new panel. The button then reads **Undo**, which turns it back into the
+  data, with the ranges and titles it had. While it's an FFT, the
+  Derivative section's **This panel** swaps it for a derivative, and Undo
+  still goes back to the data.
 - **Derivative** (Derive tab): works like FFT. Choose the **Order**
-  (First or Second), then **New panel** or **Existing panel...** (clicking
+  (First or Second), then **This panel**, **New panel** or **Existing panel...** (clicking
   an FFT panel of the same data turns it into the derivative). The panel shows dy/dx or d²y/dx² of each line as plotted,
   against its plotted x, linked to its data panel the same way. As the rows
   jitter and double back in x, each line is first averaged onto an even grid
@@ -222,8 +228,8 @@ stay until it's done or cancelled.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it.
-- **Layout...**: hover to size the grid, click to apply. Click a panel to select it.
-- **Delete panel** (beside Layout..., at the bottom of the column): deletes the selected panel. The
+- **Layout**: hover to size the grid, click to apply. Click a panel to select it.
+- **Delete panel** (beside Layout, at the bottom of the column): deletes the selected panel. The
   panels after it, across then down, move back one place, and the grid loses
   the row or column that leaves empty (a 3 x 1 stack becomes 2 x 1); in a
   grid of both rows and columns the last cell gets an empty panel instead.
@@ -237,7 +243,7 @@ stay until it's done or cancelled.
   file of that name is already there, it asks before replacing it. Ticking
   **Don't ask me again** there stops the question; to bring it back, delete
   the `"overwrite_without_asking"` line from `settings.json`.
-- **Options...** (beside Save figure): how Save figure writes the file. **Size**
+- **Saving Options** (beside Save figure): how Save figure writes the file. **Size**
   is **As on screen** (the default) or **Custom**, a **Width** and
   **Height** in inches or cm, e.g. a journal's column width; text keeps its
   point size, so a small figure has relatively larger labels. **DPI** (200

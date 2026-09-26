@@ -1,6 +1,7 @@
 """What's plotted: panels holding lines, and how those lines are coloured and labelled."""
 
 from dataclasses import dataclass, field, replace
+import math
 from uuid import uuid4
 
 from matplotlib.colors import to_rgb
@@ -134,6 +135,8 @@ class Panel:
     lines. It's made in its data panel's link group, with copies of its lines,
     so the two stay in step through the link (and can be frozen or partly
     synced); `source` is that data panel's cell while it still follows it.
+    A data panel can also be turned into its own FFT or derivative, keeping
+    what Undo needs in `data_view`.
     `id` names the panel for its links, as its cell can change."""
     lines: list = field(default_factory=lambda: [Line()])
     selected: int = 0
@@ -143,6 +146,9 @@ class Panel:
     pad: int = 1  # FFT zero-padding factor
     f_max: float | None = None  # highest frequency drawn; None: all
     derivative_window: int = 51  # derivative panels: grid points per fit, odd
+    # A data panel turned into its own FFT or derivative ("This panel"): its
+    # DATA_VIEW values from before, for Undo. None for any other panel.
+    data_view: tuple | None = None
     id: str = field(default_factory=lambda: uuid4().hex[:8])
     # Typed axis ranges, in the plotted units; None: that end is automatic.
     x_min: float | None = None
@@ -179,6 +185,22 @@ MARKERS = {"": "None", ".": "Dots", "o": "Circles", "s": "Squares", "^": "Triang
            "x": "Crosses"}
 
 RANGES = ("x_min", "x_max", "y_min", "y_max")
+# What a data panel turned into its own FFT or derivative gets back on Undo.
+DATA_VIEW = RANGES + ("title", "x_label", "y_label")
+
+
+def tidy_data_view(saved):
+    """`Panel.data_view` from a session: numbers or None for the ranges, text or
+    None for the rest, else None (and the panel has no Undo)."""
+    if not isinstance(saved, (list, tuple)) or len(saved) != len(DATA_VIEW):
+        return None
+    ranges, texts = saved[:len(RANGES)], saved[len(RANGES):]
+    if not all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool)
+                             and math.isfinite(v)) for v in ranges):
+        return None
+    if not all(v is None or isinstance(v, str) for v in texts):
+        return None
+    return tuple(None if v is None else float(v) for v in ranges) + tuple(texts)
 
 # Legend placement -> the text in its menu. "auto": only with two or more
 # lines, wherever there's room; a placement shows it even for one line.
@@ -201,6 +223,23 @@ def clear_ranges(panel, axes="xy"):
     for name in RANGES:
         if name[0] in axes:
             setattr(panel, name, None)
+
+
+def clear_data_ranges(panel, axes="xy"):
+    """Forget the ranges Undo would give a panel This panel turned, on those axes,
+    when what they'd be plotted against changes (as `clear_ranges` does for its own)."""
+    if panel.data_view is not None:
+        panel.data_view = tuple(None if name in RANGES and name[0] in axes else value
+                                for name, value in zip(DATA_VIEW, panel.data_view))
+
+
+def swap_data_view(panel):
+    """A turned panel's ranges and axis labels for Undo, swapped with its lines' x and y."""
+    if panel.data_view is not None:
+        v = dict(zip(DATA_VIEW, panel.data_view))
+        for x, y in (("x_min", "y_min"), ("x_max", "y_max"), ("x_label", "y_label")):
+            v[x], v[y] = v[y], v[x]
+        panel.data_view = tuple(v[name] for name in DATA_VIEW)
 
 
 def near(colour, others, distance=0.25):
