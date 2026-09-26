@@ -198,6 +198,12 @@ ZH = {
     "Panel {target} has {count} lines, so {extra} of panel {cell}'s (and those linked to it) will be removed. Link anyway?":
         "面板 {target} 有 {count} 条曲线，因此面板 {cell}（及与其联动的面板）将删除 {extra} 条。仍要联动吗？",
 
+    # Plots
+    "Plot {n}": "图 {n}",
+    "Close plot?": "关闭图？",
+    "Close Plot {n}? It can't be brought back; save a session first to keep it.":
+        "关闭图 {n}？关闭后无法恢复；如需保留，请先保存会话。",
+
     # Measure
     "Region": "区域",
     "Set": "设定",

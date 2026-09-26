@@ -175,6 +175,8 @@ def test_changing_language_carries_on(app, tmp_path):
     app.tab.set("Measure")
     app._show_tab()
     app.filename.set("mine.png")
+    app.new_plot()  # a second plot, then back to the first
+    app.switch_plot(1)
     app.set_language("en")
     state = app.relaunch
     assert state is not None and app.settings["language"] == "en"
@@ -187,6 +189,9 @@ def test_changing_language_carries_on(app, tmp_path):
         assert again.undo_state is not None  # the undo step came across too
         again.undo()
         assert len(again.panel.lines) == 1
+        assert [p["n"] for p in again.plots] == [1, 2]  # both plots came across
+        again.switch_plot(2)
+        assert again.panel.line.run == ""
     finally:
         again.destroy()
 

@@ -24,7 +24,10 @@ the real runs, B from 28 T to 4 T with an oscillation of 50 T in 1/B), so it
 needs none of the author's. The calculation modules are tested directly;
 `test_plotter.py` builds the real window with the `app` fixture, which
 points it at a temporary data folder and settings file (never the user's)
-and answers `askyesno`. Where Tk has no display those tests are skipped.
+and answers `askyesno`. Where Tk has no display those tests are skipped;
+any other error making the window fails them. The window is hidden, and a
+hidden window never lays out the plot's side, so a test clicking there
+(the plot tabs) shows it first.
 Add a test with each change, and still look at a saved figure or a
 screenshot for anything visual; the width test only checks that every tab
 leaves the controls column the same width.
@@ -52,7 +55,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `measure.py` | the Measure tab's reading: extremes in a region, peaks, parabola refining, snapping to a drawn point |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
-| `widgets.py` | the line and axes editors, colour picker, layout grid, overwrite question |
+| `widgets.py` | the line and axes editors, colour picker, layout grid, overwrite question, `TabStrip` |
 | `session.py` | panels and lines to and from JSON-ready data, for session files and undo |
 | `theme.py` | the window's colours and ttk styling; use its names, not hex codes, in Tk widgets |
 | `i18n.py` | the window's language: `tr`, the menu helpers and the Chinese texts (`ZH`) |
@@ -241,6 +244,18 @@ making a drag one step. `undo` restores with `restoring` set, so the restore
 isn't recorded as a change. Selection isn't in the snapshot, so selecting
 isn't a step. Opening a session is undoable, but not its data-folder switch.
 
+## Plots
+
+The tabs above the plot (`plot_strip`) are separate plots. Only the one
+shown is live, in the usual attributes (`panels`, `links`, `undo_state`,
+...); each other one is kept in `self.plots` as `_plot_state()`, the session
+dump plus the selection, Linking tab's link, typed name and undo step.
+`switch_plot`, `new_plot` and `close_plot` keep the shown one and
+`_load_plot` another, making no undo step. So anything a plot must keep
+has to be in `_plot_state`; what's shared (data folder, profile, the
+controls' tab, settings) stays out. A language change carries every plot
+(`_relaunch_state` / `_resume`).
+
 ## Language
 
 Every text Tk shows goes through `i18n.tr`, as a whole English sentence with
@@ -291,11 +306,11 @@ window. So:
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
-- **The tab strip is drawn** on a canvas (`_tab_strip`), not made of
-  buttons, for the notebook look: each tab as wide as its name, slanted
-  sides, the chosen one in front and open onto its section. It's `width=1`,
-  so it never widens the column; `test_clicking_a_tab_shows_it` checks the
-  tabs still fit.
+- **The tab strips are drawn** on a canvas (`widgets.TabStrip`), not made
+  of buttons, for the notebook look: each tab as wide as its name, slanted
+  sides, the chosen one in front and open onto what's below; the plots'
+  have a × and a +. It's `width=1`, so it never widens its parent;
+  `test_clicking_a_tab_shows_it` checks the controls' tabs still fit.
 - **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
   tab, which would keep the column long. `_show_tab` packs one frame of
   `self.tabs` and hides the others, so the column fits the tab shown.

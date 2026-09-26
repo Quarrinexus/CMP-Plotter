@@ -10,6 +10,7 @@ from tkinter import font as tkfont
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 import numpy as np
@@ -29,7 +30,7 @@ from goose_plotter.datasets import (FormatError, describe, detect_format, find_d
 from goose_plotter.format_dialog import FormatDialog
 from goose_plotter.settings import load_settings, save_settings
 from goose_plotter.widgets import (MAX_GRID, SELECTED, AxesPopup, LayoutPicker, LineStylePopup,
-                                 OverwriteDialog, SaveOptionsPopup, line_sample)
+                                 OverwriteDialog, SaveOptionsPopup, TabStrip, line_sample)
 
 PARTNER = "#f0c987"  # frame around the panel locked to the selected one
 
@@ -178,6 +179,9 @@ class Plotter(tk.Tk):
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
         self.link_pick = None  # cell while the user clicks a panel to link it to
         self.links = {}  # frozenset of two panel ids -> Link; see _link_partners
+        # The plots, one per tab above the plot: {"n": its number, "state": what
+        # _plot_state kept of it, or None for the one shown, which is live}.
+        self.plots, self.plot_index, self.plot_count = [{"n": 1, "state": None}], 0, 1
         self.link_partner = None  # id of the panel whose link the Linking tab shows
         self.cache = {}  # _data_key -> (x, y and labels, span), see _line_data
         # One step of undo: the state before the last change, and after it.
@@ -373,6 +377,18 @@ class Plotter(tk.Tk):
         self.toolbar = NavigationToolbar2Tk(self.canvas, plot, pack_toolbar=False)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
         self._toolbar_to_the_right()
+        # The plots' tabs, in the toolbar's free room at its left, open onto the plot.
+        # Bigger than the controls' tabs: there's room here, and they're what's clicked most.
+        base = tkfont.nametofont("TkDefaultFont").actual()
+        size = base["size"] if i18n.language in i18n.FONTS else (
+            base["size"] + 1 if base["size"] > 0 else base["size"] - 1)
+        font = tkfont.Font(self, family=base["family"], size=size)
+        self.plot_strip = TabStrip(self.toolbar, font, self.switch_plot,
+                                   open_colour=to_hex(self.fig.get_facecolor()),
+                                   on_close=self.close_plot, on_add=self.new_plot,
+                                   pad=10, above=14)
+        self.plot_strip.pack(side=tk.LEFT, anchor=tk.S, fill=tk.X, expand=True, padx=(6, 12))
+        self._show_plots()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self.canvas.mpl_connect("button_press_event", self._on_click)
 
@@ -465,75 +481,26 @@ class Plotter(tk.Tk):
             self.side_scroll.pack_forget()
             self.side.yview_moveto(0)
 
-    # The tab strip's shape: each tab's slanted sides, and its padding beside the name.
-    TAB_SLANT, TAB_PAD = 5, 2
+    def _tab_font(self):
+        """The tabs' font: a point smaller than the window's, so five names fit,
+        except in a language with its own font, at the one size it's sharp in."""
+        base = tkfont.nametofont("TkDefaultFont").actual()
+        size = base["size"]
+        if i18n.language not in i18n.FONTS:
+            size = size - 1 if size > 0 else size + 1
+        return tkfont.Font(self, family=base["family"], size=size)
 
     def _tab_strip(self, parent):
-        """The tabs, drawn as in a notebook: each as wide as its name, with slanted
-        sides, the chosen one in front and open at the bottom onto its section,
-        a line under the rest. Width 1, so it never widens the column."""
-        base = tkfont.nametofont("TkDefaultFont").actual()
-        if i18n.language in i18n.FONTS:  # its own font, at the one size it's sharp in
-            size = base["size"]
-        else:  # a point smaller, so five names fit
-            size = base["size"] - 1 if base["size"] > 0 else base["size"] + 1
-        font = tkfont.Font(self, family=base["family"], size=size)
-        height = max(24, font.metrics("linespace") + 6)
-        strip = tk.Canvas(parent, width=1, height=height + 1, highlightthickness=0,
-                          borderwidth=0, background=theme.BACKGROUND, cursor="hand2")
+        """The controls' tabs, one section shown at a time."""
+        strip = TabStrip(parent, self._tab_font(), self._choose_tab)
         strip.pack(anchor=tk.W, fill=tk.X)
+        strip.set_tabs([(name, tr(name)) for name in self.tabs], self.tab.get())
         self.tab_strip = strip
-        slant, pad = self.TAB_SLANT, self.TAB_PAD
-        spans, x = {}, 0
-        for name in self.tabs:  # each tab's left and right, overlapping by a slant
-            width = font.measure(tr(name)) + 2 * (slant + pad)
-            spans[name] = (x, x + width)
-            x += width - slant
-        strip.spans = spans
-        hovered = [None]
+        self.tab.trace_add("write", lambda *_: strip.choose(self.tab.get()))
 
-        def draw(_=None):
-            strip.delete("all")
-            chosen = self.tab.get()
-            bottom = height
-            strip.create_line(0, bottom, strip.winfo_width(), bottom, fill=theme.BORDER)
-            # Back to front: the others from the outside in, then the chosen one.
-            order = [n for n in reversed(self.tabs) if n != chosen] + [chosen]
-            for name in order:
-                left, right = spans[name]
-                top = 1 if name == chosen else 3
-                fill = (theme.BACKGROUND if name == chosen else
-                        theme.HOVER if name == hovered[0] else theme.PRESSED)
-                shape = (left, bottom, left + slant, top, right - slant, top, right, bottom)
-                strip.create_polygon(shape, fill=fill, outline="")
-                strip.create_line(shape, fill=theme.BORDER)
-                if name == chosen:  # open onto the section below
-                    strip.create_line(left + 1, bottom, right, bottom, fill=theme.BACKGROUND)
-                strip.create_text((left + right) / 2, (top + bottom) / 2 - 1, text=tr(name),
-                                  font=font, fill=theme.TEXT if name == chosen else theme.MUTED)
-
-        def at(x):
-            """The tab under x: the chosen one where two overlap, as it's in front."""
-            under = [n for n, (left, right) in spans.items() if left <= x <= right]
-            return self.tab.get() if self.tab.get() in under else (under[0] if under else None)
-
-        def click(event):
-            name = at(event.x)
-            if name:
-                self.tab.set(name)
-                self._show_tab()
-
-        def hover(event):
-            name = at(event.x) if event.type != tk.EventType.Leave else None
-            if name != hovered[0]:
-                hovered[0] = name
-                draw()
-
-        strip.bind("<Configure>", draw)
-        strip.bind("<Button-1>", click)
-        strip.bind("<Motion>", hover)
-        strip.bind("<Leave>", hover)
-        self.tab.trace_add("write", lambda *_: draw())
+    def _choose_tab(self, name):
+        self.tab.set(name)
+        self._show_tab()
 
     def _show_tab(self):
         """Show the chosen tab's frame and hide the others."""
@@ -2859,18 +2826,49 @@ class Plotter(tk.Tk):
         self.after_idle(self.destroy)  # after the menu is done; main() opens the new one
 
     def _relaunch_state(self):
-        """What the next window needs to carry on: the panels and links (as a
-        session holds them), which panel and lines are selected, the tab, the
-        name typed to save under and the undo step."""
+        """What the next window needs to carry on: every plot, which is shown,
+        and the controls' tab."""
+        plots = [dict(p) for p in self.plots]
+        plots[self.plot_index]["state"] = self._plot_state()
+        return {"plots": plots, "current": self.plot_index, "count": self.plot_count,
+                "tab": self.tab.get()}
+
+    def _resume(self, state):
+        """Carry on from `_relaunch_state`."""
+        self.plots, self.plot_index = state["plots"], state["current"]
+        self.plot_count = state["count"]
+        shown = self.plots[self.plot_index]
+        self._load_plot(shown["state"])
+        shown["state"] = None
+        if state["tab"] in self.tabs:
+            self.tab.set(state["tab"])
+            self._show_tab()
+        self._show_plots()
+
+    # --- plots ------------------------------------------------------------
+
+    def _plot_state(self):
+        """What a plot needs to come back as it was: its panels and links (as a
+        session holds them), which panel and lines are selected, the link the
+        Linking tab shows, the name typed to save under and its undo step."""
         typed = self.filename.get().strip()
         return {"session": session.dump(self.panels, self.rows, self.cols, self.links),
                 "selected": self.selected,
                 "lines": {cell: p.selected for cell, p in self.panels.items()},
-                "tab": self.tab.get(), "undo": self.undo_state,
+                "link_partner": self.link_partner, "undo": self.undo_state,
                 "save_as": typed if typed != self.auto_name else None}
 
-    def _resume(self, state):
-        """Carry on from `_relaunch_state`, making no undo step of it."""
+    @staticmethod
+    def _blank_plot():
+        return {"session": session.dump({(0, 0): Panel()}, 1, 1, {}), "selected": (0, 0),
+                "lines": {}, "link_partner": None, "undo": None, "save_as": None}
+
+    def _load_plot(self, state):
+        """Show the plot `_plot_state` kept, making no undo step of it."""
+        self.stop_picking()
+        self.filename.set("")  # its own name, or the default one for it
+        self.auto_name = ""
+        self.link_partner = state["link_partner"]
         self.restoring = True
         try:
             self._restore(state["session"], state["selected"])
@@ -2882,12 +2880,62 @@ class Plotter(tk.Tk):
         finally:
             self.restoring = False
         self.last_state = session.dump(self.panels, self.rows, self.cols, self.links)
-        self.undo_state = state["undo"]
-        if state["tab"] in self.tabs:
-            self.tab.set(state["tab"])
-            self._show_tab()
+        self.undo_state, self.merging = state["undo"], False
         if state["save_as"]:
             self.filename.set(state["save_as"])
+
+    def _show_plots(self):
+        self.plot_strip.set_tabs([(p["n"], tr("Plot {n}", n=p["n"])) for p in self.plots],
+                                 self.plots[self.plot_index]["n"])
+
+    def _index(self, n):
+        return next(i for i, p in enumerate(self.plots) if p["n"] == n)
+
+    def switch_plot(self, n):
+        """Show plot number `n`, keeping the one shown as it is."""
+        index = self._index(n)
+        if index == self.plot_index:
+            return
+        self.plots[self.plot_index]["state"] = self._plot_state()
+        self.plot_index = index
+        state, self.plots[index]["state"] = self.plots[index]["state"], None
+        self._load_plot(state)
+        self._show_plots()
+
+    def new_plot(self):
+        """A new, empty plot in a tab of its own, after the others."""
+        self.plots[self.plot_index]["state"] = self._plot_state()
+        self.plot_count += 1
+        self.plots.append({"n": self.plot_count, "state": None})
+        self.plot_index = len(self.plots) - 1
+        self._load_plot(self._blank_plot())
+        self._show_plots()
+
+    def close_plot(self, n):
+        """Close plot `n`, asking first if anything's plotted in it: it can't be
+        brought back (a session can keep it)."""
+        if len(self.plots) == 1:
+            return
+        index = self._index(n)
+        if index == self.plot_index:
+            plotted = any(l.run for p in self.panels.values() for l in p.lines)
+        else:
+            saved = self.plots[index]["state"]["session"]["panels"].values()
+            plotted = any(l.get("run") for p in saved for l in p["lines"])
+        if plotted and not messagebox.askyesno(
+                tr("Close plot?"),
+                tr("Close Plot {n}? It can't be brought back; save a session first to "
+                   "keep it.", n=n), parent=self):
+            return
+        del self.plots[index]
+        if index < self.plot_index:
+            self.plot_index -= 1
+        elif index == self.plot_index:  # show the one after it, or else before
+            self.plot_index = min(index, len(self.plots) - 1)
+            shown = self.plots[self.plot_index]
+            state, shown["state"] = shown["state"], None
+            self._load_plot(state)
+        self._show_plots()
 
     # --- line style -------------------------------------------------------
 

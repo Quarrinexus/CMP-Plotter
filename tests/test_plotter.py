@@ -366,6 +366,45 @@ def test_measure_settings_are_saved_in_sessions(app, tmp_path):
     assert app.panel.region == (5.0, 9.0) and app.panel.points == ((x[100], y[100]),)
 
 
+def test_plots_in_tabs_keep_their_own_panels(app):
+    plot(app)
+    app.set_region((5, 9))
+    app.new_plot()
+    assert len(app.plots) == 2 and app.panel.line.run == ""  # a fresh, empty plot
+    assert app.filename.get() == ""
+    plot(app, run="Cambridge_Sep_26.005", x_fn="1/x")
+    app.set_layout(1, 2)
+    app.switch_plot(1)
+    assert (app.rows, app.cols) == (1, 1) and app.panel.region == (5.0, 9.0)
+    assert app.panel.line.x_fn == "x" and app.filename.get().startswith("run_005")
+    app.undo()  # plot 1's own last step: the region
+    assert app.panel.region == ()
+    app.switch_plot(2)
+    assert (app.rows, app.cols) == (1, 2) and app.panel.line.x_fn == "1/x"
+    names = [text for _, text in app.plot_strip.tabs]
+    assert names == ["Plot 1", "Plot 2"] and app.plot_strip.chosen == 2
+    app.close_plot(2)  # asks (answered yes); shows the one before
+    assert len(app.plots) == 1 and app.plot_strip.chosen == 1
+    assert app.panel.line.run and not app.plot_strip.close_spans  # the last has no ×
+
+
+def test_clicking_the_plot_tabs(app):
+    plot(app)
+    app.deiconify()  # hidden, the plot's side is never laid out, so nothing gets clicks
+    app.update()
+    strip = app.plot_strip
+    left, right = strip.add_span
+    strip.event_generate("<Button-1>", x=(left + right) // 2, y=10)
+    assert len(app.plots) == 2 and strip.chosen == 2
+    app.update()
+    left, right = strip.spans[1]
+    strip.event_generate("<Button-1>", x=left + 10, y=10)
+    assert strip.chosen == 1 and app.panel.line.run
+    left, right = strip.close_spans[2]
+    strip.event_generate("<Button-1>", x=(left + right) // 2, y=10)
+    assert len(app.plots) == 1
+
+
 def test_undo_one_step(app):
     plot(app)
     app.cut_from.set("5")

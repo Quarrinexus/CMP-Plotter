@@ -262,6 +262,12 @@ stay until it's done or cancelled.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it.
+- **Plots**: the tabs above the plot, left of the toolbar, each hold a plot
+  of their own (layout, panels, lines, links, the name to save under and
+  its undo step); **+** makes a new, empty one, and **×** closes one (asking
+  first if anything's plotted in it, as it can't be brought back). The
+  data folder and the controls' tab are shared. Save session and Open
+  session work on the plot shown. Switching resets the zoom.
 - **Language**: the flag beside Layout shows the window's language; click it
   for English or 简体中文 (Simplified Chinese). The window opens again in
   the language chosen, carrying on where it was (panels, selection, tab and

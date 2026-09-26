@@ -81,7 +81,9 @@ def app(data_dir, settings_file, tmp_path, monkeypatch, language):
     monkeypatch.setattr(plotter.messagebox, "askyesno", lambda *a, **k: True)
     try:
         window = plotter.Plotter()
-    except tk.TclError as err:  # no display
+    except tk.TclError as err:
+        if "display" not in str(err):  # a real error, not a missing display
+            raise
         pytest.skip(f"no display for Tk: {err}")
     window.withdraw()
     yield window

@@ -603,3 +603,107 @@ class AxesPopup(tk.Toplevel):
         self.legend.set(panel.legend)
         for name, var in self.choices.items():
             var.set(getattr(panel, name))
+
+
+class TabStrip(tk.Canvas):
+    """Tabs drawn as in a notebook: each as wide as its text, with slanted sides,
+    the chosen one in front and open at the bottom onto what's below it (drawn
+    in `open_colour`), a line under the rest. With `on_close`, each tab has a ×
+    that closes it (but the last); with `on_add`, a + after the last makes another.
+
+    Width 1, so it takes the room it's given and never widens its parent.
+    `spans` holds each tab's (left, right), by key."""
+
+    SLANT = 5  # the sides' slant
+
+    def __init__(self, parent, font, on_select, open_colour=theme.BACKGROUND,
+                 on_close=None, on_add=None, pad=2, above=6):
+        """`pad`: room beside each tab's text; `above`: room above and below it."""
+        self.font, self.on_select, self.open_colour = font, on_select, open_colour
+        self.on_close, self.on_add, self.PAD = on_close, on_add, pad
+        self.CLOSE = font.measure("×") + 8  # the ×'s room, and the +'s
+        self.tab_height = max(24, font.metrics("linespace") + above)
+        super().__init__(parent, width=1, height=self.tab_height + 1, highlightthickness=0,
+                         borderwidth=0, background=theme.BACKGROUND, cursor="hand2")
+        self.tabs, self.chosen, self.hovered = [], None, None
+        self.spans, self.close_spans, self.add_span = {}, {}, None
+        self.bind("<Configure>", lambda _: self.draw())
+        self.bind("<Button-1>", self._click)
+        self.bind("<Motion>", self._hover)
+        self.bind("<Leave>", self._hover)
+
+    def set_tabs(self, tabs, chosen):
+        """Show `tabs`, (key, text) pairs in order, with `chosen` in front."""
+        self.tabs, self.chosen = list(tabs), chosen
+        slant, pad = self.SLANT, self.PAD
+        close = self.CLOSE if self.on_close and len(self.tabs) > 1 else 0  # not the last
+        self.spans, self.close_spans, x = {}, {}, 0
+        for key, text in self.tabs:  # each overlapping the one before by a slant
+            width = self.font.measure(text) + 2 * (slant + pad) + close
+            self.spans[key] = (x, x + width)
+            if close:
+                self.close_spans[key] = (x + width - slant - close, x + width - slant)
+            x += width - slant
+        self.add_span = (x + slant + 2, x + slant + 2 + self.CLOSE + 4) if self.on_add else None
+        self.draw()
+
+    def choose(self, key):
+        self.chosen = key
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        slant, bottom = self.SLANT, self.tab_height
+        self.create_line(0, bottom, self.winfo_width(), bottom, fill=theme.BORDER)
+        texts = dict(self.tabs)
+        # Back to front: the others from the outside in, then the chosen one.
+        order = [k for k, _ in reversed(self.tabs) if k != self.chosen]
+        order += [self.chosen] if self.chosen in texts else []
+        for key in order:
+            left, right = self.spans[key]
+            chosen = key == self.chosen
+            top = 1 if chosen else 3
+            fill = (self.open_colour if chosen else
+                    theme.HOVER if key == self.hovered else theme.PRESSED)
+            shape = (left, bottom, left + slant, top, right - slant, top, right, bottom)
+            self.create_polygon(shape, fill=fill, outline="")
+            self.create_line(shape, fill=theme.BORDER)
+            if chosen:  # open onto what's below
+                self.create_line(left + 1, bottom, right, bottom, fill=self.open_colour)
+            end = self.close_spans[key][0] if key in self.close_spans else right
+            self.create_text((left + end) / 2, (top + bottom) / 2 - 1, text=texts[key],
+                             font=self.font, fill=theme.TEXT if chosen else theme.MUTED)
+            if key in self.close_spans:  # × is fine in Tk's fonts, unlike arrows
+                a, b = self.close_spans[key]
+                self.create_text((a + b) / 2, (top + bottom) / 2 - 1, text="×", font=self.font,
+                                 fill=theme.TEXT if key == self.hovered else theme.HINT)
+        if self.add_span:
+            a, b = self.add_span
+            self.create_text((a + b) / 2, bottom / 2 + 1, text="+", font=self.font,
+                             fill=theme.TEXT if self.hovered == "+" else theme.MUTED)
+
+    def at(self, x):
+        """The tab under x (the chosen one where two overlap, as it's in front),
+        "+" over the add button, or None."""
+        under = [k for k, (left, right) in self.spans.items() if left <= x <= right]
+        if under:
+            return self.chosen if self.chosen in under else under[0]
+        if self.add_span and self.add_span[0] <= x <= self.add_span[1]:
+            return "+"
+        return None
+
+    def _click(self, event):
+        key = self.at(event.x)
+        if key == "+":
+            self.on_add()
+        elif key in self.close_spans and (self.close_spans[key][0] <= event.x
+                                          <= self.close_spans[key][1]):
+            self.on_close(key)
+        elif key is not None:
+            self.on_select(key)
+
+    def _hover(self, event):
+        key = self.at(event.x) if event.type != tk.EventType.Leave else None
+        if key != self.hovered:
+            self.hovered = key
+            self.draw()
