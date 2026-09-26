@@ -61,13 +61,6 @@ uv tool install .
 The command runs the code as it was when installed. After changing or
 updating the code, install it again from the project folder:
 
-```bash
-uv tool install --reinstall .
-```
-
-It has to be `.`, the project folder: `uv tool install goose-plotter` looks
-for the name on PyPI, where it isn't published, and fails.
-
 `uv tool uninstall goose-plotter` removes it. If the `goose-plotter` command
 isn't found afterwards, run `uv tool update-shell` and open a new terminal.
 
