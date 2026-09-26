@@ -65,11 +65,18 @@ def settings_file(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def app(data_dir, settings_file, tmp_path, monkeypatch):
+def language():
+    """The window's language for the `app` fixture; the zh_app fixture overrides it."""
+    return "en"
+
+
+@pytest.fixture
+def app(data_dir, settings_file, tmp_path, monkeypatch, language):
     """The window on the made-up data folder, with the questions it can ask
     answered yes so nothing waits. Skipped where there's no display."""
     output = tmp_path / "output"
-    settings.save_settings({"data_dir": str(data_dir), "output_dir": str(output)})
+    settings.save_settings({"data_dir": str(data_dir), "output_dir": str(output),
+                            "language": language})
     from goose_plotter import plotter
     monkeypatch.setattr(plotter.messagebox, "askyesno", lambda *a, **k: True)
     try:
@@ -78,7 +85,10 @@ def app(data_dir, settings_file, tmp_path, monkeypatch):
         pytest.skip(f"no display for Tk: {err}")
     window.withdraw()
     yield window
-    window.destroy()
+    try:
+        window.destroy()
+    except tk.TclError:  # already closed, e.g. by a language change
+        pass
 
 
 def plot(app, run="Cambridge_Sep_26.005", x_fn="x"):

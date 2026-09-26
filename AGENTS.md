@@ -55,6 +55,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `widgets.py` | the line and axes editors, colour picker, layout grid, overwrite question |
 | `session.py` | panels and lines to and from JSON-ready data, for session files and undo |
 | `theme.py` | the window's colours and ttk styling; use its names, not hex codes, in Tk widgets |
+| `i18n.py` | the window's language: `tr`, the menu helpers and the Chinese texts (`ZH`) |
 
 ## How a line is drawn
 
@@ -240,6 +241,37 @@ making a drag one step. `undo` restores with `restoring` set, so the restore
 isn't recorded as a change. Selection isn't in the snapshot, so selecting
 isn't a step. Opening a session is undoable, but not its data-folder switch.
 
+## Language
+
+Every text Tk shows goes through `i18n.tr`, as a whole English sentence with
+{named} places (never pieces joined, as Chinese word order differs), and
+has an entry in `i18n.ZH`; `test_language.py` fails on any that hasn't,
+from the source's `tr(...)` literals, the menus and a run through the
+window. So:
+
+- **Menus hold English, their boxes show `tr`.** A menu dict
+  (`smoothing.METHODS`, `background.MODES`, `LEGENDS`, ...) stays English, as
+  the legend text reads it too. Fill a Combobox with `menu(mapping)`, set it
+  with `shown(mapping, key)` and read it back with `key_of(mapping, text)`,
+  never by comparing to the English. Radio buttons keep keys as values.
+- **Never translated:** stored values (Line and Panel fields, settings,
+  sessions), anything matplotlib draws (no Chinese font is set up; titles,
+  labels, legends, `_hint`, Measure's marks), file names and CSV exports,
+  and `Line.error`'s details from the calculation modules.
+- A template built with an f-string (`f"Pick the {what} range..."`) makes
+  one key per value; each needs its entry.
+- The language is set from the settings when a `Plotter` is made, before any
+  widget. Changing it (`set_language`) saves it, keeps `_relaunch_state`
+  and closes the window; `goose_plotter.main` opens a new one with it, and
+  `_resume` carries on without making an undo step.
+- Chinese needs full-width punctuation (，：（）“”) and only GB2312
+  characters; no Δ, − or →. On Linux, Tk's X core fonts would take Chinese
+  characters from Japanese and Korean fonts that lack many (drawn as
+  boxes), so in Chinese `theme.use_font` sets every named font to song ti
+  at 16 px (`i18n.FONTS`; one of its real bitmap sizes, so no other size),
+  tabs included; Latin letters then fall back to a serif. The glyph test
+  checks song ti draws every character.
+
 ## Things that look odd but are deliberate
 
 - **Row order, not sorted x.** The field record jitters (hundreds of direction
@@ -280,16 +312,19 @@ Build the window, patch the popups so they can't block, drive the controls,
 then read the state:
 
 ```python
-from goose_plotter import plotter as P
+from goose_plotter import plotter as P, smoothing
+from goose_plotter.i18n import shown
 P.messagebox.askyesno = lambda *a, **k: True  # the only popup questions left
 app = P.Plotter()                      # uses ~/.config/goose-plotter/settings.json
 app.run.set(next(n for n in app.datasets if "005" in n)); app.apply_controls()
-app.smooth.set("Savitzky-Golay"); app.apply_controls()
+app.smooth.set(shown(smoothing.METHODS, "savgol")); app.apply_controls()
 print(app.panel.line.shown, app.error_label["text"])
 app.fig.savefig("/some/scratch/dir/check.png")
 app.destroy()
 ```
 
+Set menus with `shown(mapping, key)`, not their English text: the settings
+may choose Chinese, and then the English isn't one of the menu's texts.
 `askyesno` comes up when making FFT or derivative panels or linking. Wrap runs in
 `timeout`: an unpatched popup waits forever. Don't call
 `choose_folder`, which rewrites the user's settings file.

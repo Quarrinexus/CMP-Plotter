@@ -5,6 +5,7 @@ from tkinter import ttk
 
 from goose_plotter.datasets import FormatError, parse
 from goose_plotter import theme
+from goose_plotter.i18n import tr
 
 PREVIEW_LINES = 40  # of the raw file
 PREVIEW_ROWS = 5  # of the parsed table
@@ -19,16 +20,17 @@ class FormatDialog(tk.Toplevel):
 
     def __init__(self, parent, name, lines, fmt, reason=""):
         super().__init__(parent)
-        self.title(f"Data format - {name}")
+        self.title(tr("Data format - {name}", name=name))
         self.transient(parent)
         self.lines, self.fmt, self.cancelled = lines, None, True
 
         body = ttk.Frame(self, padding=10)
         body.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(body, text=reason or "How the files in this data folder are laid out.",
+        ttk.Label(body, text=reason or tr("How the files in this data folder are laid out."),
                   foreground=theme.ERROR if reason else theme.MUTED,
                   wraplength=640).pack(anchor=tk.W)
-        ttk.Label(body, text=f"Start of {name} (column names orange, first data line blue):",
+        ttk.Label(body, text=tr("Start of {name} (column names orange, first data line blue):",
+                                name=name),
                   foreground=theme.MUTED).pack(anchor=tk.W, pady=(8, 2))
         self.raw = self._scrolled(body, lambda frame: tk.Text(
             frame, height=14, width=100, wrap=tk.NONE, font="TkFixedFont"))
@@ -41,20 +43,21 @@ class FormatDialog(tk.Toplevel):
         choices = ttk.Frame(body)
         choices.pack(anchor=tk.W, pady=(10, 0))
         names = {v: k for k, v in CHOICES.items()}
-        self.delimiter = tk.StringVar(value=names.get(fmt["delimiter"], "Other"))
+        self.delimiter = tk.StringVar(value=tr(names.get(fmt["delimiter"], "Other")))
         self.other = tk.StringVar(value="" if fmt["delimiter"] in names else fmt["delimiter"])
         self.header = tk.IntVar(value=fmt["header_line"])
         self.data = tk.IntVar(value=fmt["data_line"])
-        ttk.Label(choices, text="Delimiter").grid(row=0, column=0, sticky=tk.W)
-        ttk.Combobox(choices, textvariable=self.delimiter, values=[*CHOICES, "Other"],
+        ttk.Label(choices, text=tr("Delimiter")).grid(row=0, column=0, sticky=tk.W)
+        ttk.Combobox(choices, textvariable=self.delimiter,
+                     values=[tr(k) for k in (*CHOICES, "Other")],
                      state="readonly", width=10).grid(row=1, column=0, sticky=tk.W)
         self.other_box = ttk.Entry(choices, textvariable=self.other, width=4)
         self.other_box.grid(row=1, column=1, padx=(4, 16))
-        ttk.Label(choices, text="Column names on line (0: none)").grid(
+        ttk.Label(choices, text=tr("Column names on line (0: none)")).grid(
             row=0, column=2, sticky=tk.W)
         ttk.Spinbox(choices, textvariable=self.header, from_=0, to=len(lines),
                     width=6).grid(row=1, column=2, sticky=tk.W)
-        ttk.Label(choices, text="Data starts on line").grid(row=0, column=3, sticky=tk.W,
+        ttk.Label(choices, text=tr("Data starts on line")).grid(row=0, column=3, sticky=tk.W,
                                                             padx=(16, 0))
         ttk.Spinbox(choices, textvariable=self.data, from_=1, to=len(lines),
                     width=6).grid(row=1, column=3, sticky=tk.W, padx=(16, 0))
@@ -66,10 +69,10 @@ class FormatDialog(tk.Toplevel):
 
         buttons = ttk.Frame(body)
         buttons.pack(anchor=tk.E, pady=(10, 0))
-        ttk.Button(buttons, text="Use automatic detection",
+        ttk.Button(buttons, text=tr("Use automatic detection"),
                    command=lambda: self._close(None)).pack(side=tk.LEFT)
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT, padx=(6, 0))
-        self.save_button = ttk.Button(buttons, text="Save for this folder",
+        ttk.Button(buttons, text=tr("Cancel"), command=self.destroy).pack(side=tk.LEFT, padx=(6, 0))
+        self.save_button = ttk.Button(buttons, text=tr("Save for this folder"),
                                       command=lambda: self._close(self._format()))
         self.save_button.pack(side=tk.LEFT, padx=(6, 0))
 
@@ -98,7 +101,7 @@ class FormatDialog(tk.Toplevel):
         return widget
 
     def _format(self):
-        choice = self.delimiter.get()
+        choice = next((k for k in CHOICES if tr(k) == self.delimiter.get()), None)
         return {"delimiter": CHOICES.get(choice) or self.other.get(),
                 "header_line": self.header.get(), "data_line": self.data.get()}
 
@@ -110,27 +113,30 @@ class FormatDialog(tk.Toplevel):
 
     def _update(self):
         self._pending = None
-        self.other_box.state(["!disabled" if self.delimiter.get() == "Other" else "disabled"])
+        self.other_box.state(["!disabled" if self.delimiter.get() == tr("Other") else "disabled"])
         self.table.delete(*self.table.get_children())
         self.raw.tag_remove("header", "1.0", tk.END)
         self.raw.tag_remove("data", "1.0", tk.END)
         try:
             fmt = self._format()
             if not fmt["delimiter"]:
-                raise FormatError("type the delimiter in the box beside Other")
+                raise FormatError(tr("type the delimiter in the box beside Other"))
             for tag, line in (("header", fmt["header_line"]), ("data", fmt["data_line"])):
                 if 0 < line <= PREVIEW_LINES:
                     self.raw.tag_add(tag, f"{line}.0", f"{line + 1}.0")
             df = parse(self.lines, fmt)
         except (tk.TclError, FormatError) as err:  # TclError: a spinbox isn't a number
-            message = "line numbers must be whole numbers" if isinstance(err, tk.TclError) else err
-            self.summary.configure(text=f"Can't read the file this way: {message}",
+            message = (tr("line numbers must be whole numbers") if isinstance(err, tk.TclError)
+                       else err)
+            self.summary.configure(text=tr("Can't read the file this way: {message}",
+                                           message=message),
                                    foreground=theme.ERROR)
             self.table["columns"] = ()
             self.save_button.state(["disabled"])
             return
-        plural = "s" if len(df.columns) != 1 else ""
-        self.summary.configure(text=f"{len(df.columns)} column{plural}, {len(df)} rows",
+        self.summary.configure(text=tr("{columns} columns, {rows} rows" if len(df.columns) != 1
+                                       else "{columns} column, {rows} rows",
+                                       columns=len(df.columns), rows=len(df)),
                                foreground=theme.OK)
         self.table["columns"] = list(range(len(df.columns)))
         for i, column in enumerate(df.columns):

@@ -414,6 +414,7 @@ def test_clicking_a_tab_shows_it(app):
     assert app.tabs["Derive"].winfo_manager() and not app.tabs["Process"].winfo_manager()
 
 
+@pytest.mark.parametrize("language", ["en", "zh"])
 def test_no_tab_widens_the_controls_column(app):
     """Every tab leaves the column as wide as the controls above the tabs make
     it, so switching tabs never pushes the plot over."""

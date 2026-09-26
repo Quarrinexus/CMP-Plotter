@@ -1,6 +1,7 @@
 """The window's colours, and the ttk styling that uses them."""
 
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
 
 BACKGROUND = "#f7f7f5"  # the window
@@ -17,6 +18,24 @@ ACCENT_SOFT = "#dde8fb"  # selected rows
 SELECTED_ROW = "#ebeae6"  # selected line in the Lines list, whose text is the line's colour
 ERROR = "#b3261e"
 OK = "#2e7d32"
+
+
+# Tk's named fonts, which every widget's text uses unless it asks for another.
+NAMED_FONTS = ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont",
+               "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont")
+
+
+def has_family(root, family):
+    return family.lower() in {f.lower() for f in tkfont.families(root)}
+
+
+def use_font(root, family, size):
+    """Draw the window's text in `family` at `size` (pixels if negative), where
+    Tk has that family; elsewhere (Windows, macOS) the system's font serves."""
+    if not has_family(root, family):
+        return
+    for name in NAMED_FONTS:
+        tkfont.nametofont(name, root=root).configure(family=family, size=size)
 
 
 def apply(root):

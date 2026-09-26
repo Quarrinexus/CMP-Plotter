@@ -16,8 +16,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from goose_plotter.axis_functions import apply_function, is_identity, rename
-from goose_plotter import (background, derivative, measure, session, smoothing, spectrum,
-                           splicing, theme)
+from goose_plotter import (background, derivative, i18n, measure, session, smoothing,
+                           spectrum, splicing, theme)
+from goose_plotter.i18n import key_of, menu, shown, tr
 from goose_plotter.columns import label, lookup, with_unit, without_unit
 from goose_plotter.model import (DATA_VIEW, GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC,
                                X_UNITS, Link, Panel, clear_data_ranges, clear_ranges,
@@ -109,8 +110,38 @@ def flag_icon(width=24, height=12):
     return ImageTk.PhotoImage(image.resize((width, height), Image.LANCZOS))
 
 
+def star(draw, centre, radius, fill, pointing=-np.pi / 2):
+    """A five-pointed star with its top point at angle `pointing`."""
+    points = [(centre[0] + r * np.cos(pointing + i * np.pi / 5),
+               centre[1] + r * np.sin(pointing + i * np.pi / 5))
+              for i, r in enumerate([radius, radius * 0.382] * 5)]
+    draw.polygon(points, fill=fill)
+
+
+def china_flag_icon(width=24, height=16):
+    """The flag of China, for the language button: red, a large yellow star and
+    four small ones arced round it, each pointing at it."""
+    k = 8
+    w, h = width * k, height * k
+    image = Image.new("RGBA", (w, h), "#de2910")
+    draw = ImageDraw.Draw(image)
+    unit = w / 30  # the flag is drawn on a 30 x 20 grid
+    big = (5 * unit, 5 * unit)
+    star(draw, big, 3 * unit, "#ffde00")
+    for x, y in ((10, 2), (12, 4), (12, 7), (10, 9)):
+        centre = (x * unit, y * unit)
+        towards = np.arctan2(big[1] - centre[1], big[0] - centre[0])
+        star(draw, centre, unit, "#ffde00", pointing=towards)
+    return ImageTk.PhotoImage(image.resize((width, height), Image.LANCZOS))
+
+
+FLAGS = {"en": flag_icon, "zh": china_flag_icon}  # the language button's picture
+
+
 class Plotter(tk.Tk):
-    def __init__(self):
+    def __init__(self, relaunch=None):
+        """`relaunch`: what `_relaunch_state` kept of the window this one replaces
+        (after a language change), to carry on where it was."""
         # The window's class, for a desktop entry's StartupWMClass (Tk makes it
         # "Goose-plotter"), so taskbars match it to the launcher, not "Tk".
         super().__init__(className="goose-plotter")
@@ -155,6 +186,10 @@ class Plotter(tk.Tk):
         self.restoring = False
         self.status_timer = None  # the pending clear of an info message, see _say
         self.settings = load_settings()
+        i18n.set_language(self.settings.get("language"))  # before any text is made
+        if i18n.language in i18n.FONTS:
+            theme.use_font(self, *i18n.FONTS[i18n.language])
+        self.relaunch = None  # set when closing only to open again, see set_language
         self.profile, profile_error = load_profile(self.data_dir)
 
         # The controls column scrolls, with a scrollbar only when it's taller
@@ -186,18 +221,18 @@ class Plotter(tk.Tk):
         # Files: folders, format and sessions, set now and then, so a toggle at
         # the top; open at start only if a folder still needs choosing.
         files = self._collapsible(
-            controls, (0, 0), lambda _: "Files",
+            controls, (0, 0), lambda _: tr("Files"),
             start_open=not (self.settings.get("data_dir") and self.settings.get("output_dir")))
         self.data_label = self._folder_row(files, "Data folder", "data_dir")
         self.output_label = self._folder_row(files, "Output folder", "output_dir")
-        ttk.Button(files, text="Data format...", command=self.edit_format).pack(
+        ttk.Button(files, text=tr("Data format..."), command=self.edit_format).pack(
             anchor=tk.W, pady=(0, 2))
-        ttk.Label(files, text="Session").pack(anchor=tk.W, pady=(10, 2))
+        ttk.Label(files, text=tr("Session")).pack(anchor=tk.W, pady=(10, 2))
         buttons = ttk.Frame(files)
         buttons.pack(anchor=tk.W, pady=(0, 2))
-        ttk.Button(buttons, text="Open session...", command=self.open_session).pack(
+        ttk.Button(buttons, text=tr("Open session..."), command=self.open_session).pack(
             side=tk.LEFT)
-        ttk.Button(buttons, text="Save session...", command=self.save_session).pack(
+        ttk.Button(buttons, text=tr("Save session..."), command=self.save_session).pack(
             side=tk.LEFT, padx=(6, 0))
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
         # Labels beside their boxes, not above, to keep the column short.
@@ -205,7 +240,7 @@ class Plotter(tk.Tk):
         row.pack(fill=tk.X)
         row.columnconfigure(1, weight=1)
         self.run = self._row_combo(row, 0, "Dataset", postcommand=self._refresh_runs)
-        ttk.Label(controls, text="Lines").pack(anchor=tk.W, pady=(8, 2))
+        ttk.Label(controls, text=tr("Lines")).pack(anchor=tk.W, pady=(8, 2))
         lines = ttk.Frame(controls)
         lines.pack(anchor=tk.W, fill=tk.X)
         self.line_list = tk.Listbox(lines, height=4, width=24, exportselection=False,
@@ -295,7 +330,7 @@ class Plotter(tk.Tk):
         self.status.pack(anchor=tk.W, pady=(6, 0))
         row = ttk.Frame(save)
         row.pack(fill=tk.X, pady=(4, 0))
-        ttk.Label(row, text="Save as").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(row, text=tr("Save as")).pack(side=tk.LEFT, padx=(0, 6))
         self.filename = tk.StringVar()
         self.auto_name = ""  # last default name put in the box
         # Width 1: the box takes the column's width without widening it (a long
@@ -307,24 +342,26 @@ class Plotter(tk.Tk):
         buttons = ttk.Frame(save)
         buttons.pack(fill=tk.X, pady=(8, 0))
         buttons.columnconfigure((0, 1), weight=1, uniform="button")
-        self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
-        # Layout shares its cell with a square language button, before it (only
-        # English so far, so it does nothing yet).
+        self.delete_button = ttk.Button(buttons, text=tr("Delete panel"),
+                                        command=self.delete_panel)
+        # Layout shares its cell with a square language button before it, which
+        # shows the language's flag and opens a menu of the others.
         layout_cell = ttk.Frame(buttons)
-        layout = ttk.Button(layout_cell, text="Layout", command=self.choose_layout)
+        layout = ttk.Button(layout_cell, text=tr("Layout"), command=self.choose_layout)
         side = layout.winfo_reqheight()
         language = ttk.Frame(layout_cell, width=side, height=side)
         language.pack_propagate(False)
         language.pack(side=tk.LEFT, padx=(0, 6))
-        self.flag_icon = flag_icon()
-        self.language_button = ttk.Button(language, image=self.flag_icon, style="Box.TButton")
+        self.flag_icon = FLAGS[i18n.language]()
+        self.language_button = ttk.Button(language, image=self.flag_icon, style="Box.TButton",
+                                          command=self.choose_language)
         self.language_button.pack(fill=tk.BOTH, expand=True)
         layout.pack(side=tk.LEFT, fill=tk.X, expand=True)
         for i, button in enumerate((
                 layout_cell,
                 self.delete_button,
-                ttk.Button(buttons, text="Saving Options", command=self.open_save_options),
-                ttk.Button(buttons, text="Save figure", command=self.save))):
+                ttk.Button(buttons, text=tr("Saving Options"), command=self.open_save_options),
+                ttk.Button(buttons, text=tr("Save figure"), command=self.save))):
             row, col = divmod(i, 2)
             button.grid(row=row, column=col, sticky="ew", padx=(0, 3) if col == 0 else (3, 0),
                         pady=(6, 0) if row else 0)
@@ -341,6 +378,8 @@ class Plotter(tk.Tk):
         self._refresh_runs()
         self._build_axes()
         self._load_controls()
+        if relaunch:
+            self._resume(relaunch)
         if profile_error:
             self._say(profile_error, error=True)
 
@@ -411,23 +450,27 @@ class Plotter(tk.Tk):
             self.side.yview_moveto(0)
 
     # The tab strip's shape: each tab's slanted sides, and its padding beside the name.
-    TAB_SLANT, TAB_PAD, TAB_HEIGHT = 5, 2, 24
+    TAB_SLANT, TAB_PAD = 5, 2
 
     def _tab_strip(self, parent):
         """The tabs, drawn as in a notebook: each as wide as its name, with slanted
         sides, the chosen one in front and open at the bottom onto its section,
         a line under the rest. Width 1, so it never widens the column."""
         base = tkfont.nametofont("TkDefaultFont").actual()
-        size = base["size"] - 1 if base["size"] > 0 else base["size"] + 1
+        if i18n.language in i18n.FONTS:  # its own font, at the one size it's sharp in
+            size = base["size"]
+        else:  # a point smaller, so five names fit
+            size = base["size"] - 1 if base["size"] > 0 else base["size"] + 1
         font = tkfont.Font(self, family=base["family"], size=size)
-        strip = tk.Canvas(parent, width=1, height=self.TAB_HEIGHT + 1, highlightthickness=0,
+        height = max(24, font.metrics("linespace") + 6)
+        strip = tk.Canvas(parent, width=1, height=height + 1, highlightthickness=0,
                           borderwidth=0, background=theme.BACKGROUND, cursor="hand2")
         strip.pack(anchor=tk.W, fill=tk.X)
         self.tab_strip = strip
-        slant, pad, height = self.TAB_SLANT, self.TAB_PAD, self.TAB_HEIGHT
+        slant, pad = self.TAB_SLANT, self.TAB_PAD
         spans, x = {}, 0
         for name in self.tabs:  # each tab's left and right, overlapping by a slant
-            width = font.measure(name) + 2 * (slant + pad)
+            width = font.measure(tr(name)) + 2 * (slant + pad)
             spans[name] = (x, x + width)
             x += width - slant
         strip.spans = spans
@@ -450,7 +493,7 @@ class Plotter(tk.Tk):
                 strip.create_line(shape, fill=theme.BORDER)
                 if name == chosen:  # open onto the section below
                     strip.create_line(left + 1, bottom, right, bottom, fill=theme.BACKGROUND)
-                strip.create_text((left + right) / 2, (top + bottom) / 2 - 1, text=name,
+                strip.create_text((left + right) / 2, (top + bottom) / 2 - 1, text=tr(name),
                                   font=font, fill=theme.TEXT if name == chosen else theme.MUTED)
 
         def at(x):
@@ -489,7 +532,7 @@ class Plotter(tk.Tk):
         """Show why the selected line isn't drawn, under the axes, if it isn't."""
         error = self.panel.line.error
         if error and self.panel.line.run not in self.frames:
-            error = f"Could not load dataset: {error}"
+            error = tr("Could not load dataset: {error}", error=error)
         self.error_label["text"] = plain(error)
         if not error:
             self.error_label.pack_forget()
@@ -504,7 +547,7 @@ class Plotter(tk.Tk):
         self.side.yview_scroll(-1 if up else 1, "units")
 
     def _combo(self, parent, label, values, default="", width=24, pady=(8, 2), **kwargs):
-        ttk.Label(parent, text=label).pack(anchor=tk.W, pady=pady)
+        ttk.Label(parent, text=tr(label)).pack(anchor=tk.W, pady=pady)
         var = tk.StringVar(value=default)
         box = ttk.Combobox(parent, textvariable=var, values=values,
                            state="readonly", width=width, **kwargs)
@@ -555,7 +598,7 @@ class Plotter(tk.Tk):
         """'label [box]' on grid row `row` of `parent` (the box in column 1).
 
         Width 1: the box takes the room the column leaves it, never widening it."""
-        ttk.Label(parent, text=label, width=7).grid(row=row, column=0, sticky=tk.W,
+        ttk.Label(parent, text=tr(label), width=7).grid(row=row, column=0, sticky=tk.W,
                                                    pady=(0, 3))
         var = tk.StringVar()
         box = ttk.Combobox(parent, textvariable=var, state="readonly", width=1, **kwargs)
@@ -572,12 +615,12 @@ class Plotter(tk.Tk):
             # Collapsed but in use: show the function so it isn't forgotten.
             expr = var.get().strip()
             used = f": {expr}" if not is_identity(expr) and not is_open else ""
-            return f"Function{used}"
+            return tr("Function") + used
 
         body = self._collapsible(parent, (4, 0), text, on_open=lambda: entry.focus_set())
         entry = ttk.Entry(body, textvariable=var, width=16)
         entry.pack(anchor=tk.W)
-        ttk.Label(body, text=f"e.g. 1/{name}; Enter applies",
+        ttk.Label(body, text=tr("e.g. 1/{name}; Enter applies", name=name),
                   foreground=theme.HINT).pack(anchor=tk.W)
         for key in ("<Return>", "<KP_Enter>"):
             entry.bind(key, lambda _: (self.apply_controls(), body.refresh()))
@@ -586,14 +629,14 @@ class Plotter(tk.Tk):
 
     def _smoothing_box(self, parent):
         """A collapsed 'Smoothing' toggle: method, window and (for SG) order."""
-        self.smooth = tk.StringVar(value=smoothing.METHODS[""])
+        self.smooth = tk.StringVar(value=shown(smoothing.METHODS, ""))
         self.window, self.order = tk.StringVar(value="21"), tk.StringVar(value="2")
-        self.window_unit = tk.StringVar(value=smoothing.UNITS[False])
+        self.window_unit = tk.StringVar(value=shown(smoothing.UNITS, False))
 
         def text(is_open):
             l = self.panel.line
             used = f": {plain(smoothing.describe(*l.smoothing))}" if l.smoothing and not is_open else ""
-            return f"Smoothing{used}"
+            return tr("Smoothing") + used
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
         # The method, and beside it for SG the order; then the window, and what
@@ -601,21 +644,21 @@ class Plotter(tk.Tk):
         top = ttk.Frame(body)
         top.pack(anchor=tk.W, pady=(2, 0))
         method = ttk.Combobox(top, textvariable=self.smooth, state="readonly", width=15,
-                              values=list(smoothing.METHODS.values()))
+                              values=menu(smoothing.METHODS))
         method.pack(side=tk.LEFT)
         method.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
         sizes = ttk.Frame(body)
         sizes.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(sizes, text="Window").pack(side=tk.LEFT)
+        ttk.Label(sizes, text=tr("Window")).pack(side=tk.LEFT)
         window = ttk.Spinbox(sizes, textvariable=self.window, from_=3, to=100001,
                              increment=2, width=6, command=self.apply_controls)
         window.pack(side=tk.LEFT, padx=(4, 4))
         unit = ttk.Combobox(sizes, textvariable=self.window_unit, state="readonly", width=7,
-                            values=list(smoothing.UNITS.values()))
+                            values=menu(smoothing.UNITS))
         unit.pack(side=tk.LEFT)
         unit.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
         orders = ttk.Frame(top)
-        ttk.Label(orders, text="Order").pack(side=tk.LEFT)
+        ttk.Label(orders, text=tr("Order")).pack(side=tk.LEFT)
         order = ttk.Spinbox(orders, textvariable=self.order, from_=0, to=10, width=2,
                             command=self.apply_controls)
         order.pack(side=tk.LEFT, padx=(4, 0))
@@ -625,7 +668,7 @@ class Plotter(tk.Tk):
 
         def step(direction):
             """Arrows on the window: 1-2-5 steps in x; odd numbers only for SG."""
-            if self.window_unit.get() == smoothing.UNITS[True]:
+            if self.window_unit.get() == shown(smoothing.UNITS, True):
                 try:
                     span = float(self.window.get())
                 except ValueError:
@@ -634,7 +677,7 @@ class Plotter(tk.Tk):
                     self.window.set(f"{smoothing.step_nice(span, direction):g}")
                     self.apply_controls()
                 return "break"
-            if self.smooth.get() != smoothing.METHODS["savgol"]:
+            if self.smooth.get() != shown(smoothing.METHODS, "savgol"):
                 return None  # Tk's own stepping
             try:
                 n, order = int(self.window.get()), int(self.order.get())
@@ -660,7 +703,7 @@ class Plotter(tk.Tk):
 
     def _background_box(self, parent):
         """A collapsed 'Background' toggle: mode, degree and the fit's x range."""
-        self.fit_mode = tk.StringVar(value=background.MODES[""])
+        self.fit_mode = tk.StringVar(value=shown(background.MODES, ""))
         self.degree = tk.StringVar(value="10")
         self.fit_from, self.fit_to = tk.StringVar(), tk.StringVar()
 
@@ -669,7 +712,7 @@ class Plotter(tk.Tk):
             # Without the range, which would widen the column.
             used = (f": {plain(background.describe(*fitted[:2], None, None))}"
                     if fitted and not is_open else "")
-            return f"Background{used}"
+            return tr("Background") + used
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
         # The mode and the polynomial's degree; then the x range fitted (blank
@@ -677,22 +720,22 @@ class Plotter(tk.Tk):
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(2, 0))
         mode = ttk.Combobox(row, textvariable=self.fit_mode, state="readonly", width=9,
-                            values=list(background.MODES.values()))
+                            values=menu(background.MODES))
         mode.pack(side=tk.LEFT)
         mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
-        ttk.Label(row, text="Degree").pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(row, text=tr("Degree")).pack(side=tk.LEFT, padx=(10, 0))
         degree = ttk.Spinbox(row, textvariable=self.degree, from_=0, to=30, width=3,
                              command=self.apply_controls)
         degree.pack(side=tk.LEFT, padx=(4, 0))
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Fit x").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("Fit x")).pack(side=tk.LEFT)
         start = ttk.Entry(row, textvariable=self.fit_from, width=7)
         start.pack(side=tk.LEFT, padx=(4, 4))
-        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("to")).pack(side=tk.LEFT)
         end = ttk.Entry(row, textvariable=self.fit_to, width=7)
         end.pack(side=tk.LEFT, padx=(4, 6))
-        ttk.Button(row, text="Pick", width=5, command=self.pick_range).pack(side=tk.LEFT)
+        ttk.Button(row, text=tr("Pick"), width=5, command=self.pick_range).pack(side=tk.LEFT)
         for box in (degree, start, end):
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_controls())
@@ -702,14 +745,14 @@ class Plotter(tk.Tk):
         """Cut the selected line to some x ranges, or cut them out of it: one
         mode for all its ranges, then the ranges, typed or picked. No toggle,
         as it has the Splicing tab to itself."""
-        self.cut_mode = tk.StringVar(value=splicing.MODES[""])
+        self.cut_mode = tk.StringVar(value=shown(splicing.MODES, ""))
         self.cut_from, self.cut_to = tk.StringVar(), tk.StringVar()
         self.cut_index = None  # the range chosen in the list, which Enter changes
         self.cut_owner = None  # the line the list was last filled from
         body = ttk.Frame(parent)
         body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
         mode = ttk.Combobox(body, textvariable=self.cut_mode, state="readonly", width=14,
-                            values=list(splicing.MODES.values()))
+                            values=menu(splicing.MODES))
         mode.pack(anchor=tk.W, pady=(2, 0))
         mode.bind("<<ComboboxSelected>>", lambda _: self.apply_controls())
         row = ttk.Frame(body)
@@ -717,7 +760,7 @@ class Plotter(tk.Tk):
         ttk.Label(row, text="x").pack(side=tk.LEFT)
         start = ttk.Entry(row, textvariable=self.cut_from, width=7)
         start.pack(side=tk.LEFT, padx=(4, 4))
-        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("to")).pack(side=tk.LEFT)
         end = ttk.Entry(row, textvariable=self.cut_to, width=7)
         end.pack(side=tk.LEFT, padx=(4, 0))
         for box in (start, end):
@@ -731,7 +774,7 @@ class Plotter(tk.Tk):
         for i, (text, command) in enumerate((("Add", self.add_cut),
                                              ("Pick", lambda: self.pick_range("cut")),
                                              ("Delete", self.delete_cut))):
-            ttk.Button(buttons, text=text, width=1, command=command).grid(
+            ttk.Button(buttons, text=tr(text), width=1, command=command).grid(
                 row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
         # The ranges. Width 1: the list takes the room the column leaves it.
         row = ttk.Frame(body)
@@ -749,7 +792,7 @@ class Plotter(tk.Tk):
         self.cut_list.bind("<<ListboxSelect>>", lambda _: self._choose_cut())
         for text in ("in the plotted x; a blank end: no limit",
                      "click a range, then Enter changes it"):
-            ttk.Label(body, text=text, foreground=theme.HINT).pack(anchor=tk.W)
+            ttk.Label(body, text=tr(text), foreground=theme.HINT).pack(anchor=tk.W)
         self.cut_hint = ttk.Label(body, foreground=theme.HINT)  # which it cuts
         self.cut_hint.pack(anchor=tk.W)
 
@@ -757,8 +800,8 @@ class Plotter(tk.Tk):
         """Fill the Splicing list with the selected line's ranges (an FFT panel's
         spectrum's), and the boxes with the chosen one."""
         l = self._cut_target()
-        self.cut_hint["text"] = ("on an FFT: cuts the spectrum, in F" if l is self.panel
-                                 else "cut before fits, smoothing and FFT")
+        self.cut_hint["text"] = tr("on an FFT: cuts the spectrum, in F" if l is self.panel
+                                   else "cut before fits, smoothing and FFT")
         if l is not self.cut_owner:  # another line: start at its first range
             self.cut_owner, self.cut_index = l, 0 if l.cuts else None
             self.cut_from.set("")
@@ -767,9 +810,10 @@ class Plotter(tk.Tk):
             self.cut_index = len(l.cuts) - 1 if l.cuts else None
         self.cut_list.delete(0, tk.END)
         for start, end in l.cuts:
-            self.cut_list.insert(tk.END, "x " + ("from " + f"{start:.6g}" if end is None
-                                                 else "up to " + f"{end:.6g}" if start is None
-                                                 else f"{start:.6g} to {end:.6g}"))
+            self.cut_list.insert(tk.END, tr("x from {start}", start=f"{start:.6g}") if end is None
+                                 else tr("x up to {end}", end=f"{end:.6g}") if start is None
+                                 else tr("x {start} to {end}", start=f"{start:.6g}",
+                                         end=f"{end:.6g}"))
         if self.cut_index is not None:
             self.cut_list.selection_set(self.cut_index)
             self.cut_list.see(self.cut_index)
@@ -799,11 +843,11 @@ class Plotter(tk.Tk):
             except ValueError:
                 value = np.nan
             if value is not None and not np.isfinite(value):
-                self._say(f"'{text}' isn't a number.", error=True)
+                self._say(tr("'{text}' isn't a number.", text=text), error=True)
                 return None
             ends.append(value)
         if ends == [None, None]:
-            self._say("Type at least one end of the range.", error=True)
+            self._say(tr("Type at least one end of the range."), error=True)
             return None
         return tuple(ends)
 
@@ -822,17 +866,17 @@ class Plotter(tk.Tk):
         self.cut_index = l.cuts.index(splicing.tidy([pair])[0])
         switched = not l.cut
         if switched:  # adding a range means cutting with it
-            self.cut_mode.set(splicing.MODES["keep"])
+            self.cut_mode.set(shown(splicing.MODES, "keep"))
         self.apply_controls()
         if switched:  # after the redraw, which clears the status
-            self._say("Keeping the range; choose Remove ranges to cut it out instead.")
+            self._say(tr("Keeping the range; choose Remove ranges to cut it out instead."))
 
     def delete_cut(self):
         """Delete the range chosen in the list from the selected line's cut
         (an FFT panel's spectrum's)."""
         l = self._cut_target()
         if self.cut_index is None:
-            self._say("Click a range in the list to delete it.", error=True)
+            self._say(tr("Click a range in the list to delete it."), error=True)
             return
         l.cuts = l.cuts[:self.cut_index] + l.cuts[self.cut_index + 1:]
         self.apply_controls()
@@ -843,17 +887,20 @@ class Plotter(tk.Tk):
 
         def text(is_open):
             p = self.panel
-            used = ("" if is_open or p.operation != "fft" else
-                    ": this panel" if p.data_view is not None else
-                    f": of panel {self._number(p.source)}" if p.source is not None else "")
-            return f"FFT{used}"
+            if is_open or p.operation != "fft":
+                return tr("FFT")
+            if p.data_view is not None:
+                return tr("FFT: this panel")
+            if p.source is not None:
+                return tr("FFT: of panel {n}", n=self._number(p.source))
+            return tr("FFT")
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
         show_here = self._here_button(body, lambda: "fft")
         # For a data panel: the two ways to make its FFT.
         make = ttk.Frame(body)
         self._make_buttons(make, lambda: "fft")
-        ttk.Label(make, text="use 1/x on B for F in T", foreground=theme.HINT).pack(
+        ttk.Label(make, text=tr("use 1/x on B for F in T"), foreground=theme.HINT).pack(
             anchor=tk.W)
         # For an FFT panel: its settings.
         settings = ttk.Frame(body)
@@ -861,21 +908,21 @@ class Plotter(tk.Tk):
         source_label.pack(anchor=tk.W, pady=(2, 0))
         row = ttk.Frame(settings)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Window").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("Window")).pack(side=tk.LEFT)
         window = ttk.Combobox(row, textvariable=self.fft_window, state="readonly", width=5,
-                              values=list(spectrum.WINDOWS.values()))
+                              values=menu(spectrum.WINDOWS))
         window.pack(side=tk.LEFT, padx=(4, 10))
-        ttk.Label(row, text="Padding").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("Padding")).pack(side=tk.LEFT)
         pad = ttk.Combobox(row, textvariable=self.fft_pad, state="readonly", width=2,
                            values=[str(n) for n in spectrum.PADDING])
         pad.pack(side=tk.LEFT, padx=(4, 0))
         row = ttk.Frame(settings)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="F max").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("F max")).pack(side=tk.LEFT)
         f_max = ttk.Entry(row, textvariable=self.f_max, width=8)
         f_max.pack(side=tk.LEFT, padx=(4, 8))
-        ttk.Label(row, text="blank: all", foreground=theme.HINT).pack(side=tk.LEFT)
-        back = ttk.Button(settings, text="Back to data", command=self.back_to_data)
+        ttk.Label(row, text=tr("blank: all"), foreground=theme.HINT).pack(side=tk.LEFT)
+        back = ttk.Button(settings, text=tr("Back to data"), command=self.back_to_data)
         for box in (window, pad):
             box.bind("<<ComboboxSelected>>", lambda _: self.apply_fft())
         for key in ("<Return>", "<KP_Enter>"):
@@ -887,22 +934,23 @@ class Plotter(tk.Tk):
         def refresh():
             body.refresh()
             p = self.panel
-            shown = make if not p.derived else settings if p.operation == "fft" else other
+            visible = make if not p.derived else settings if p.operation == "fft" else other
             for frame in (make, settings, other):
-                if frame is not shown:
+                if frame is not visible:
                     frame.pack_forget()
-            shown.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if shown is other else 0)
+            visible.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if visible is other else 0)
             show_here(p)
-            if shown is make:
+            if visible is make:
                 return
-            if shown is other:
-                other["text"] = ("Click This panel for its FFT instead."
+            if visible is other:
+                other["text"] = (tr("Click This panel for its FFT instead.")
                                  if p.data_view is not None else
-                                 f"Select {self._data_panel_name(p)} to make its FFT.")
+                                 tr("Select {panel} to make its FFT.",
+                                    panel=self._data_panel_name(p)))
                 return
             self._show_back(back, p)
-            source_label["text"] = f"FFT of {self._derived_from(p)}"
-            self.fft_window.set(spectrum.WINDOWS[p.window])
+            source_label["text"] = tr("FFT of {source}", source=self._derived_from(p))
+            self.fft_window.set(shown(spectrum.WINDOWS, p.window))
             self.fft_pad.set(str(p.pad))
             self.f_max.set("" if p.f_max is None else f"{p.f_max:g}")
         self.fft_window.show = refresh
@@ -912,9 +960,9 @@ class Plotter(tk.Tk):
         `operation()` names; the section's toggle says which it is."""
         row = ttk.Frame(parent)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Button(row, text="New panel",
+        ttk.Button(row, text=tr("New panel"),
                    command=lambda: self.new_derived_panel(operation())).pack(side=tk.LEFT)
-        ttk.Button(row, text="Existing panel...",
+        ttk.Button(row, text=tr("Existing panel..."),
                    command=lambda: self.existing_derived_panel(operation())).pack(
             side=tk.LEFT, padx=(6, 0))
 
@@ -941,12 +989,12 @@ class Plotter(tk.Tk):
 
         def show(p):
             usable = not p.derived or p.data_view is not None
-            button["text"] = "Undo" if undoes(p) else "This panel"
+            button["text"] = tr("Undo" if undoes(p) else "This panel")
             button.state(["!disabled" if usable else "disabled"])
-            hint["text"] = ("back to its data" if undoes(p) else
+            hint["text"] = (tr("back to its data") if undoes(p) else
                             "" if not usable else
-                            "in place of its data" if not p.derived else
-                            "in its place")
+                            tr("in place of its data") if not p.derived else
+                            tr("in its place"))
         return show
 
     @staticmethod
@@ -965,21 +1013,23 @@ class Plotter(tk.Tk):
         def text(is_open):
             p = self.panel
             if is_open or not p.derived or p.operation == "fft":
-                return "Derivative"
-            order = derivative.ORDERS[p.operation].lower()
-            used = (f": {order}, this panel" if p.data_view is not None else
-                    f": {order} of panel {self._number(p.source)}" if p.source is not None
-                    else "")
-            return f"Derivative{used}"
+                return tr("Derivative")
+            kind = self._kind(p.operation)
+            if p.data_view is not None:
+                return tr("Derivative: {kind}, this panel", kind=kind)
+            if p.source is not None:
+                return tr("Derivative: {kind} of panel {n}", kind=kind, n=self._number(p.source))
+            return tr("Derivative")
 
         body = self._collapsible(parent, (10, 0), text, start_open=True)
         # The order: which derivative to make, or which this derivative panel shows.
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(row, text="Order").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(row, text=tr("Order")).pack(side=tk.LEFT, padx=(0, 6))
         orders = []
         for key, name in derivative.ORDERS.items():
-            button = ttk.Radiobutton(row, text=name, variable=self.derivative_order, value=key,
+            button = ttk.Radiobutton(row, text=tr(name), variable=self.derivative_order,
+                                     value=key,
                                      style="Toolbutton", command=self.apply_derivative)
             button.pack(side=tk.LEFT, padx=(0, 4))
             orders.append(button)
@@ -993,14 +1043,14 @@ class Plotter(tk.Tk):
         source_label.pack(anchor=tk.W, pady=(4, 0))
         row = ttk.Frame(settings)
         row.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(row, text="Window").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("Window")).pack(side=tk.LEFT)
         window = ttk.Spinbox(row, textvariable=self.derivative_window, from_=5, to=100001,
                              increment=2, width=6, command=self.apply_derivative)
         window.pack(side=tk.LEFT, padx=(4, 6))
-        ttk.Label(row, text="points, odd", foreground=theme.HINT).pack(side=tk.LEFT)
-        ttk.Label(settings, text="wider for less noise; 2nd needs more",
+        ttk.Label(row, text=tr("points, odd"), foreground=theme.HINT).pack(side=tk.LEFT)
+        ttk.Label(settings, text=tr("wider for less noise; 2nd needs more"),
                   foreground=theme.HINT).pack(anchor=tk.W)
-        back = ttk.Button(settings, text="Back to data", command=self.back_to_data)
+        back = ttk.Button(settings, text=tr("Back to data"), command=self.back_to_data)
         for key in ("<Return>", "<KP_Enter>"):
             window.bind(key, lambda _: self.apply_derivative())
         # For an FFT panel: where to make a derivative instead.
@@ -1010,24 +1060,25 @@ class Plotter(tk.Tk):
             body.refresh()
             p = self.panel
             derived = p.derived
-            shown = make if not derived else other if p.operation == "fft" else settings
+            visible = make if not derived else other if p.operation == "fft" else settings
             for frame in (make, settings, other):
-                if frame is not shown:
+                if frame is not visible:
                     frame.pack_forget()
-            shown.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if shown is other else 0)
+            visible.pack(anchor=tk.W, fill=tk.X, pady=(2, 0) if visible is other else 0)
             # An FFT panel has no order to choose, unless This panel can swap it for one.
-            choose = shown is not other or p.data_view is not None
+            choose = visible is not other or p.data_view is not None
             for button in orders:
                 button.state(["!disabled" if choose else "disabled"])
             show_here(p)
-            if shown is other:
-                other["text"] = ("Click This panel for its derivative instead."
+            if visible is other:
+                other["text"] = (tr("Click This panel for its derivative instead.")
                                  if p.data_view is not None else
-                                 f"Select {self._data_panel_name(p)} to make its derivative.")
+                                 tr("Select {panel} to make its derivative.",
+                                    panel=self._data_panel_name(p)))
             elif derived:
                 self.derivative_order.set(p.operation)
-                source_label["text"] = (f"{derivative.ORDERS[p.operation]} derivative of "
-                                        f"{self._derived_from(p)}")
+                source_label["text"] = tr("{kind} of {source}", kind=self._kind(p.operation),
+                                          source=self._derived_from(p))
                 self.derivative_window.set(p.derivative_window)
                 self._show_back(back, p)
         self.derivative_order.show = refresh
@@ -1071,15 +1122,15 @@ class Plotter(tk.Tk):
         buttons = ttk.Frame(body)
         buttons.pack(fill=tk.X, pady=(6, 0))
         buttons.columnconfigure((0, 1, 2), weight=1, uniform="link")
-        ttk.Button(buttons, text="Link...", width=1, command=self.link_panels).grid(
+        ttk.Button(buttons, text=tr("Link..."), width=1, command=self.link_panels).grid(
             row=0, column=0, sticky="ew")
-        unlink = ttk.Button(buttons, text="Unlink", width=1, command=self.unlink_panel)
+        unlink = ttk.Button(buttons, text=tr("Unlink"), width=1, command=self.unlink_panel)
         unlink.grid(row=0, column=1, sticky="ew", padx=6)
-        freeze = ttk.Button(buttons, text="Freeze", width=1, command=self.freeze)
+        freeze = ttk.Button(buttons, text=tr("Freeze"), width=1, command=self.freeze)
         freeze.grid(row=0, column=2, sticky="ew")
         # What the chosen link shares, in pairs: x beside y, and so on.
         settings = ttk.Frame(body)
-        ttk.Label(settings, text="Sync").pack(anchor=tk.W, pady=(10, 2))
+        ttk.Label(settings, text=tr("Sync")).pack(anchor=tk.W, pady=(10, 2))
         boxes = ttk.Frame(settings)
         boxes.pack(anchor=tk.W, fill=tk.X)
         self.sync_vars = {}
@@ -1092,7 +1143,7 @@ class Plotter(tk.Tk):
         for key in SYNC:
             var = self.sync_vars[key] = tk.BooleanVar()
             row, col = places[key]
-            ttk.Checkbutton(boxes, text=names[key], variable=var,
+            ttk.Checkbutton(boxes, text=tr(names[key]), variable=var,
                             command=lambda key=key: self.set_sync(key)).grid(
                 row=row, column=col, sticky=tk.W, padx=(0, 16), pady=1)
         hint = ttk.Label(settings, foreground=theme.HINT)
@@ -1100,15 +1151,17 @@ class Plotter(tk.Tk):
 
         def refresh():
             partners = self._link_partners(self.selected)
-            status["text"] = (f"Linked to panel{'s' if len(partners) > 1 else ''} "
-                              f"{self._numbers(partners)}" if partners else "Not linked")
+            status["text"] = (tr("Linked to panels {numbers}" if len(partners) > 1
+                                 else "Linked to panel {numbers}",
+                                 numbers=self._numbers(partners))
+                              if partners else tr("Not linked"))
             chosen, link = self._chosen_link()
             for button in (unlink, freeze):
                 button.state(["!disabled" if link else "disabled"])
             if link is None:
                 details.pack_forget()
                 settings.pack_forget()
-                freeze["text"] = "Freeze"
+                freeze["text"] = tr("Freeze")
                 return
             details.pack(fill=tk.X, after=status)
             settings.pack(fill=tk.X, after=buttons)
@@ -1116,25 +1169,26 @@ class Plotter(tk.Tk):
                 button.destroy()
             for c in partners:
                 frozen = self.links[self._pair(self.selected, c)].frozen
-                ttk.Radiobutton(tabs, text=f"Panel {self._number(c)}{' (frozen)' if frozen else ''}",
+                ttk.Radiobutton(tabs, text=tr("Panel {n} (frozen)" if frozen else "Panel {n}",
+                                              n=self._number(c)),
                                 value=self.panels[c].id, variable=self.link_var,
                                 style="Tab.Toolbutton",
                                 command=lambda: self.choose_link(self.link_var.get())).pack(
                     side=tk.LEFT, padx=(0, 2))
             self.link_var.set(self.link_partner)
-            freeze["text"] = "Unfreeze" if link.frozen else "Freeze"
+            freeze["text"] = tr("Unfreeze" if link.frozen else "Freeze")
             for key, var in self.sync_vars.items():
                 var.set(key in link.synced)
-            hint["text"] = (f"the link between panels {self._number(self.selected)} "
-                            f"and {self._number(chosen)}")
+            hint["text"] = tr("the link between panels {a} and {b}",
+                              a=self._number(self.selected), b=self._number(chosen))
         self.link_status = refresh
 
     def _folder_row(self, parent, label, key):
         """'Data folder' etc.: the chosen path, with Browse... to change it."""
-        ttk.Label(parent, text=label).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(parent, text=tr(label)).pack(anchor=tk.W, pady=(0, 2))
         row = ttk.Frame(parent)
         row.pack(anchor=tk.W, fill=tk.X, pady=(0, 6))
-        ttk.Button(row, text="Browse...",
+        ttk.Button(row, text=tr("Browse..."),
                    command=lambda: self.choose_folder(key, label)).pack(side=tk.RIGHT)
         # Width 1: the name takes whatever the rest of the column leaves, so the
         # row never widens the column (a long name is cut off).
@@ -1146,11 +1200,11 @@ class Plotter(tk.Tk):
     def _show_folder(self, widget, key):
         """Show the folder's name (the full path is too long for the column)."""
         folder = self.settings.get(key)
-        widget["text"] = Path(folder).name or folder if folder else "(not set)"
+        widget["text"] = Path(folder).name or folder if folder else tr("(not set)")
         widget["foreground"] = theme.MUTED if folder else theme.ERROR
 
     def choose_folder(self, key, title):
-        folder = filedialog.askdirectory(parent=self, title=f"Choose {title.lower()}",
+        folder = filedialog.askdirectory(parent=self, title=tr(f"Choose {title.lower()}"),
                                          initialdir=self.settings.get(key) or Path.home(),
                                          mustexist=True)
         if not folder:  # cancelled
@@ -1159,7 +1213,7 @@ class Plotter(tk.Tk):
         try:
             save_settings(self.settings)
         except OSError as err:
-            self._say(f"Couldn't remember the folder: {err}", error=True)
+            self._say(tr("Couldn't remember the folder: {err}", err=err), error=True)
         if key == "data_dir":
             self._show_folder(self.data_label, key)
             self._reload_folder()
@@ -1188,8 +1242,8 @@ class Plotter(tk.Tk):
         self._refresh_runs()
         name = name or self.panel.line.run or next(iter(self.datasets), None)
         if name not in self.datasets:
-            self._say("No data files in the data folder." if self.data_dir
-                      else "Choose a data folder first.", error=True)
+            self._say(tr("No data files in the data folder." if self.data_dir
+                         else "Choose a data folder first."), error=True)
             return
         lines = read_lines(self.datasets[name])
         fmt = self.profile.format
@@ -1205,7 +1259,7 @@ class Plotter(tk.Tk):
         try:
             save_format(self.data_dir, dialog.fmt)
         except (OSError, ValueError) as err:
-            self._say(f"Couldn't save the format: {err}", error=True)
+            self._say(tr("Couldn't save the format: {err}", err=err), error=True)
             return
         self._reload_folder()
 
@@ -1235,17 +1289,17 @@ class Plotter(tk.Tk):
         self.y_fn.set(l.y_fn)
         self.x_fn.show_label()
         self.y_fn.show_label()
-        self.smooth.set(smoothing.METHODS[l.smooth])
-        self.window_unit.set(smoothing.UNITS[l.in_x])
+        self.smooth.set(shown(smoothing.METHODS, l.smooth))
+        self.window_unit.set(shown(smoothing.UNITS, l.in_x))
         self.window.set((f"{l.span:g}" if l.span is not None else "") if l.in_x else l.window)
         self.order.set(l.order)
         self.smooth.show()
-        self.fit_mode.set(background.MODES[l.background])
+        self.fit_mode.set(shown(background.MODES, l.background))
         self.degree.set(l.degree)
         self.fit_from.set("" if l.fit_from is None else f"{l.fit_from:.12g}")
         self.fit_to.set("" if l.fit_to is None else f"{l.fit_to:.12g}")
         self.fit_mode.show()
-        self.cut_mode.set(splicing.MODES[self._cut_target().cut])
+        self.cut_mode.set(shown(splicing.MODES, self._cut_target().cut))
         self._show_cuts()
         self._show_axes()
         self.fft_window.show()
@@ -1286,8 +1340,8 @@ class Plotter(tk.Tk):
         l.run = self.run.get()
         l.x, l.y = without_unit(self.x.get()) or l.x, without_unit(self.y.get()) or l.y
         l.x_fn, l.y_fn = self.x_fn.get().strip(), self.y_fn.get().strip()
-        l.smooth = next(k for k, v in smoothing.METHODS.items() if v == self.smooth.get())
-        was_in_x, l.in_x = l.in_x, self.window_unit.get() == smoothing.UNITS[True]
+        l.smooth = key_of(smoothing.METHODS, self.smooth.get())
+        was_in_x, l.in_x = l.in_x, self.window_unit.get() == shown(smoothing.UNITS, True)
         # The box holds the window in the units it was showing; the other is kept.
         fields = (("span" if was_in_x else "window", self.window, float if was_in_x else int),
                   ("order", self.order, int))
@@ -1296,14 +1350,13 @@ class Plotter(tk.Tk):
                 setattr(l, attr, kind(var.get()))
             except ValueError:  # not a number: keep the old one (shown again below)
                 pass
-        l.background = next(k for k, v in background.MODES.items() if v == self.fit_mode.get())
+        l.background = key_of(background.MODES, self.fit_mode.get())
         try:
             l.degree = int(self.degree.get())
         except ValueError:
             pass
         spectrum_cut = (self.panel.cut, self.panel.cuts)
-        self._cut_target().cut = next(k for k, v in splicing.MODES.items()
-                                     if v == self.cut_mode.get())
+        self._cut_target().cut = key_of(splicing.MODES, self.cut_mode.get())
         for attr, var in (("fit_from", self.fit_from), ("fit_to", self.fit_to)):
             try:
                 setattr(l, attr, float(var.get()) if var.get().strip() else None)
@@ -1320,7 +1373,7 @@ class Plotter(tk.Tk):
             try:
                 self._load(l)
             except FormatError as err:  # ask how the file is laid out
-                self.edit_format(l.run, f"Couldn't read {l.run}: {err}")
+                self.edit_format(l.run, tr("Couldn't read {name}: {err}", name=l.run, err=err))
                 if l.run not in self.frames:  # still unreadable; don't ask again
                     self._redraw_selected()
                     return
@@ -1717,7 +1770,7 @@ class Plotter(tk.Tk):
         self.selected = order[min(order.index(gone), len(kept) - 1)]
         self._build_axes()
         self._load_controls()
-        self._say(f"Deleted panel {number}; Ctrl+Z brings it back.")
+        self._say(tr("Deleted panel {n}; Ctrl+Z brings it back.", n=number))
 
     def swap(self):
         """Swap X and Y, with their functions (x <-> y), for every line in the panel."""
@@ -1745,25 +1798,30 @@ class Plotter(tk.Tk):
     def _derived_from(self, p):
         """'panel 1, linked to it' for a derived panel, or what it is without one."""
         if p.data_view is not None:
-            return "this panel's lines, drawn in their place; Undo brings them back."
+            return tr("this panel's lines, drawn in their place; Undo brings them back.")
         if p.source is None:
-            return "its own lines; it no longer follows a panel."
-        return f"panel {self._number(p.source)}, linked to it (see Linking)."
+            return tr("its own lines; it no longer follows a panel.")
+        return tr("panel {n}, linked to it (see Linking).", n=self._number(p.source))
 
     def _data_panel_name(self, p):
-        return f"panel {self._number(p.source)}" if p.source is not None else "a data panel"
+        return (tr("panel {n}", n=self._number(p.source)) if p.source is not None
+                else tr("a data panel"))
 
-    @staticmethod
-    def _kind(operation):
+    KINDS = {"fft": "FFT", "d1": "first derivative", "d2": "second derivative"}
+
+    @classmethod
+    def _kind(cls, operation):
         """'FFT', 'first derivative' or 'second derivative', for messages."""
-        return "FFT" if operation == "fft" else f"{derivative.ORDERS[operation].lower()} derivative"
+        return tr(cls.KINDS[operation])
 
     def _derive_source(self, operation):
         """The selected panel, if it can have a derived panel made of it."""
         if self.panel.derived:
-            self._say(f"This panel is already {'an' if self.panel.operation == 'fft' else 'a'} "
-                      f"{self._kind(self.panel.operation)}; select its data panel "
-                      f"to make its {self._kind(operation)}.", error=True)
+            self._say(tr("This panel is already an FFT; select its data panel to make its "
+                         "{kind}." if self.panel.operation == "fft" else
+                         "This panel is already a {current}; select its data panel to make "
+                         "its {kind}.", current=self._kind(self.panel.operation),
+                         kind=self._kind(operation)), error=True)
             return None
         return self.selected
 
@@ -1784,7 +1842,7 @@ class Plotter(tk.Tk):
         if source is None:
             return
         if self.rows >= MAX_GRID:
-            self._say("The layout is full; put it in an existing panel.", error=True)
+            self._say(tr("The layout is full; put it in an existing panel."), error=True)
             return
         row = self.rows
         for c in range(self.cols):
@@ -1802,16 +1860,18 @@ class Plotter(tk.Tk):
         if source is None:
             return
         if len(self.panels) == 1:
-            self._say("There's only one panel; put it in a new panel.", error=True)
+            self._say(tr("There's only one panel; put it in a new panel."), error=True)
             return
         self.derive_pick = source, operation
-        self._say(f"Click the panel to put the {self._kind(operation)} in; Esc cancels.")
+        self._say(tr("Click the panel to put the {kind} in; Esc cancels.",
+                     kind=self._kind(operation)))
 
     def _put_derived(self, source, target, operation):
         self.stop_picking()
         old = self.panels[target]
         if target == source:
-            self._say(f"Click a different panel for the {self._kind(operation)}.", error=True)
+            self._say(tr("Click a different panel for the {kind}.", kind=self._kind(operation)),
+                      error=True)
             return
         if old.derived and old.source == source:  # derived from it: change what it shows
             if old.operation != operation:
@@ -1822,12 +1882,14 @@ class Plotter(tk.Tk):
             dependents = [c for c, p in self.panels.items() if p.source == target]
             own = not old.derived or old.data_view is not None  # its lines are its own data
             if (own and any(l.shown for l in old.lines)) or dependents:
-                also = (", and the panels derived from it will stop following it"
-                        if dependents else "")
+                question = ("Replace panel {target}'s lines with the {kind} of panel "
+                            "{source}, and the panels derived from it will stop following it?"
+                            if dependents else
+                            "Replace panel {target}'s lines with the {kind} of panel {source}?")
                 if not messagebox.askyesno(
-                        "Replace panel?",
-                        f"Replace panel {self._number(target)}'s lines with the "
-                        f"{self._kind(operation)} of panel {self._number(source)}{also}?",
+                        tr("Replace panel?"),
+                        tr(question, target=self._number(target), kind=self._kind(operation),
+                           source=self._number(source)),
                         parent=self):
                     return
             for c in dependents:  # derived from what's replaced: they keep their lines
@@ -1870,7 +1932,7 @@ class Plotter(tk.Tk):
         p = self.panel
         if p.operation != "fft":
             return
-        p.window = next(k for k, v in spectrum.WINDOWS.items() if v == self.fft_window.get())
+        p.window = key_of(spectrum.WINDOWS, self.fft_window.get())
         p.pad = int(self.fft_pad.get())
         try:
             f_max = float(self.f_max.get()) if self.f_max.get().strip() else None
@@ -1946,7 +2008,7 @@ class Plotter(tk.Tk):
                 continue  # still the automatic text, as shown: keep it automatic
             why = text_problem(text) if text else ""
             if why:  # keep the old text (shown again below)
-                problem = f"Can't draw that {name.replace('_', ' ')}: {plain(why)}"
+                problem = tr(f"Can't draw that {name.replace('_', ' ')}: {{why}}", why=plain(why))
             else:
                 setattr(p, name, text)
         for name, keys in (("legend", LEGENDS), ("grid", GRIDS), ("grid_axis", GRID_AXES),
@@ -1956,7 +2018,7 @@ class Plotter(tk.Tk):
         for axis in "xy":
             low, high = getattr(p, f"{axis}_min"), getattr(p, f"{axis}_max")
             if low is not None and high is not None and low == high:
-                problem = f"The {axis} range needs two different ends."
+                problem = tr(f"The {axis} range needs two different ends.")
                 setattr(p, f"{axis}_max", None)
         # Not the old view: that would put back the range just changed.
         self._redraw_selected(keep="")
@@ -1974,7 +2036,7 @@ class Plotter(tk.Tk):
         try:
             save_settings(self.settings)
         except OSError as err:
-            self._say(f"Couldn't remember that: {err}", error=True)
+            self._say(tr("Couldn't remember that: {err}", err=err), error=True)
         for cell in self.axes:
             self._draw_panel(cell)
         self.canvas.draw()
@@ -2109,10 +2171,10 @@ class Plotter(tk.Tk):
         """Wait for a click on the panel to link the selected one to."""
         self.stop_picking()
         if len(self.panels) == 1:
-            self._say("There's only one panel; choose a bigger Layout first.", error=True)
+            self._say(tr("There's only one panel; choose a bigger Layout first."), error=True)
             return
         self.link_pick = self.selected
-        self._say("Click the panel to link to; Esc cancels.")
+        self._say(tr("Click the panel to link to; Esc cancels."))
 
     def _link(self, cell, target):
         """Link `cell` to `target`, taking `target`'s settings the new link shares.
@@ -2121,21 +2183,23 @@ class Plotter(tk.Tk):
         number of lines, so lines stay paired across the links."""
         self.stop_picking()
         if target == cell:
-            self._say("Click a different panel to link to.", error=True)
+            self._say(tr("Click a different panel to link to."), error=True)
             return
         pair = self._pair(cell, target)
         if pair in self.links:
-            self._say("Those panels are already linked.")
+            self._say(tr("Those panels are already linked."))
             return
         source = self.panels[target].lines
         followers = [] if target in self._tied(cell) else self._group_lists(cell)
         extra = sum(max(0, len(lines) - len(source)) for lines in followers)
         if extra and not messagebox.askyesno(
-                "Link panels?",
-                f"Panel {self._number(target)} has {len(source)} line"
-                f"{'s' if len(source) > 1 else ''}, so {extra} of panel "
-                f"{self._number(cell)}'s (and those linked to it) will be removed. "
-                f"Link anyway?", parent=self):
+                tr("Link panels?"),
+                tr("Panel {target} has {count} lines, so {extra} of panel {cell}'s (and those "
+                   "linked to it) will be removed. Link anyway?" if len(source) > 1 else
+                   "Panel {target} has {count} line, so {extra} of panel {cell}'s (and those "
+                   "linked to it) will be removed. Link anyway?",
+                   target=self._number(target), count=len(source), extra=extra,
+                   cell=self._number(cell)), parent=self):
             return
         for lines in followers:  # same number of lines as the target's
             del lines[len(source):]
@@ -2170,19 +2234,19 @@ class Plotter(tk.Tk):
         what = {"fit": "fit", "cut": "cut", "measure": "measuring"}[target]
         if target == "fit" and self.panel.derived or (
                 target == "cut" and self.panel.derived and self.panel.operation != "fft"):
-            self._say(f"Pick the {what} range on the data panel, not its "
-                      f"{self._kind(self.panel.operation)}.", error=True)
+            self._say(tr(f"Pick the {what} range on the data panel, not its {{kind}}.",
+                         kind=self._kind(self.panel.operation)), error=True)
             return
         if not self.panel.line.shown:
-            self._say(f"Plot the line first, then pick its {what} range.", error=True)
+            self._say(tr(f"Plot the line first, then pick its {what} range."), error=True)
             return
         if self.toolbar.mode:
-            self._say("Turn off the toolbar's zoom or pan first.", error=True)
+            self._say(tr("Turn off the toolbar's zoom or pan first."), error=True)
             return
         self.pick_target = target
         self.picker = SpanSelector(ax, self._picked, "horizontal", useblit=True,
                                    props={"facecolor": SELECTED, "alpha": 0.3})
-        self._say(f"Drag across the plot to set the {what} range; Esc cancels.")
+        self._say(tr(f"Drag across the plot to set the {what} range; Esc cancels."))
 
     def _picked(self, start, end):
         # After the selector has finished its own handling of the release,
@@ -2204,7 +2268,7 @@ class Plotter(tk.Tk):
         self.fit_to.set(f"{end:.5g}")
         self.apply_controls()
         if not self.panel.line.background:
-            self._say("Range set; choose Show fit or Subtract to use it.")
+            self._say(tr("Range set; choose Show fit or Subtract to use it."))
 
     def stop_picking(self):
         """End a fit-range drag or a pick of where a derived panel or link goes, if one is under way."""
@@ -2232,7 +2296,8 @@ class Plotter(tk.Tk):
         body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
 
         def heading(parent, text, pady=(8, 0)):
-            ttk.Label(parent, text=text, foreground=theme.MUTED).pack(anchor=tk.W, pady=pady)
+            ttk.Label(parent, text=tr(text), foreground=theme.MUTED).pack(anchor=tk.W,
+                                                                          pady=pady)
 
         def button_row(parent, buttons, pady=(4, 0)):
             """Buttons in equal shares of the column (width 1, so they can't widen it)."""
@@ -2240,17 +2305,18 @@ class Plotter(tk.Tk):
             row.pack(fill=tk.X, pady=pady)
             row.columnconfigure(tuple(range(len(buttons))), weight=1, uniform="measure")
             for i, (text, command) in enumerate(buttons):
-                ttk.Button(row, text=text, width=1, command=command).grid(
+                ttk.Button(row, text=tr(text), width=1, command=command).grid(
                     row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
 
         # The region: blank ends are the whole line.
         row = ttk.Frame(body)
         row.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(row, text="Region", foreground=theme.MUTED).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(row, text=tr("Region"), foreground=theme.MUTED).pack(side=tk.LEFT,
+                                                                       padx=(0, 8))
         ttk.Label(row, text="x").pack(side=tk.LEFT)
         start = ttk.Entry(row, textvariable=self.region_from, width=8)
         start.pack(side=tk.LEFT, padx=(4, 4))
-        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("to")).pack(side=tk.LEFT)
         end = ttk.Entry(row, textvariable=self.region_to, width=8)
         end.pack(side=tk.LEFT, padx=(4, 0))
         for box in (start, end):
@@ -2266,7 +2332,7 @@ class Plotter(tk.Tk):
         self.readout_table.columnconfigure((1, 2), weight=1, uniform="readout")
         self.readout = {}
         for r, name in enumerate(("Max", "Min", "Peak to peak", "Mean", "Points")):
-            ttk.Label(self.readout_table, text=name).grid(row=r, column=0, sticky="w",
+            ttk.Label(self.readout_table, text=tr(name)).grid(row=r, column=0, sticky="w",
                                                           padx=(0, 8))
             self.readout[name] = [ttk.Label(self.readout_table, width=1),
                                   ttk.Label(self.readout_table, width=1)]
@@ -2288,14 +2354,14 @@ class Plotter(tk.Tk):
         heading(self.peak_section, "Peaks")
         row = ttk.Frame(self.peak_section)
         row.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(row, text="Up to").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("Up to")).pack(side=tk.LEFT)
         count = ttk.Spinbox(row, textvariable=self.peak_count, from_=1, to=50, width=3,
                             command=self.apply_measure)
         count.pack(side=tk.LEFT, padx=(4, 6))
-        ttk.Label(row, text="over").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("over")).pack(side=tk.LEFT)
         floor = ttk.Entry(row, textvariable=self.peak_floor, width=4)
         floor.pack(side=tk.LEFT, padx=(4, 4))
-        ttk.Label(row, text="% of the top").pack(side=tk.LEFT)
+        ttk.Label(row, text=tr("% of the top")).pack(side=tk.LEFT)
         for box in (count, floor):
             for key in ("<Return>", "<KP_Enter>"):
                 box.bind(key, lambda _: self.apply_measure())
@@ -2308,7 +2374,7 @@ class Plotter(tk.Tk):
         # Taking the numbers away.
         self.keep_section = ttk.Frame(body)
         self.keep_section.pack(fill=tk.X, pady=(8, 0))
-        ttk.Checkbutton(self.keep_section, text="Marks in saved figures",
+        ttk.Checkbutton(self.keep_section, text=tr("Marks in saved figures"),
                         variable=self.marks_saved_var,
                         command=self.apply_measure).pack(anchor=tk.W)
         button_row(self.keep_section, (("Copy", self.copy_measurements),
@@ -2397,12 +2463,13 @@ class Plotter(tk.Tk):
         self.peak_floor.set(f"{p.peak_floor:g}")
         read = self.measured.get(self.selected)
         fft = p.operation == "fft"
-        self.mark_button["text"] = ("Mark the peaks on the plot" if fft else
-                                    "Mark the max and min on the plot")
+        self.mark_button["text"] = tr("Mark the peaks on the plot" if fft else
+                                      "Mark the max and min on the plot")
         name = self.auto_names.get(self.selected, {}).get(p.selected, "")
         name = name if p.line.label is None else p.line.label
-        self.readout_line["text"] = (plain(f"Line {p.selected + 1}" + (f": {name}" if name else ""))
-                                     if read else "Plot the selected line to measure it.")
+        self.readout_line["text"] = (plain(tr("Line {n}", n=p.selected + 1)
+                                           + (f": {name}" if name else ""))
+                                     if read else tr("Plot the selected line to measure it."))
         found = read and read["extremes"]
         rows = {"Max": found and found["max"], "Min": found and found["min"],
                 "Peak to peak": found and (None, found["range"]),
@@ -2414,7 +2481,7 @@ class Plotter(tk.Tk):
             y_label["text"] = ((f"{value[1]}" if name == "Points" else f"y {value[1]:.6g}")
                                if value else "")
         if read and not found:
-            self.readout_line["text"] += " (no points in the region)"
+            self.readout_line["text"] += tr(" (no points in the region)")
         for part in self.readout_parts:  # only once there's something to read
             part.pack_forget()
         if read:
@@ -2452,7 +2519,7 @@ class Plotter(tk.Tk):
             except ValueError:
                 value = np.nan
             if value is not None and not np.isfinite(value):
-                self._say(f"'{text}' isn't a number.", error=True)
+                self._say(tr("'{text}' isn't a number.", text=text), error=True)
                 return None
             ends.append(value)
         return measure.tidy_region(ends)
@@ -2486,13 +2553,13 @@ class Plotter(tk.Tk):
         """Clicks on the selected panel read points off its selected line, until Esc."""
         self.stop_picking()
         if self._drawn(self.selected) is None:
-            self._say("Plot the selected line first, then read points off it.", error=True)
+            self._say(tr("Plot the selected line first, then read points off it."), error=True)
             return
         if self.toolbar.mode:
-            self._say("Turn off the toolbar's zoom or pan first.", error=True)
+            self._say(tr("Turn off the toolbar's zoom or pan first."), error=True)
             return
         self.point_pick = True
-        self._say("Click near the line to read a point; Esc stops.")
+        self._say(tr("Click near the line to read a point; Esc stops."))
 
     def _read_point(self, event):
         drawn = self._drawn(self.selected)
@@ -2504,7 +2571,7 @@ class Plotter(tk.Tk):
             return
         self.panel.points = (self.panel.points + (point,))[-2:]
         self._redraw_selected(keep="xy")
-        self._say("Click near the line to read a point; Esc stops.")
+        self._say(tr("Click near the line to read a point; Esc stops."))
 
     def clear_points(self):
         self.stop_picking()
@@ -2516,7 +2583,10 @@ class Plotter(tk.Tk):
         read = self.measured.get(self.selected)
         if not read:
             return []
-        rows = [("line", self.readout_line["text"], "")]
+        p = self.panel  # in English, like the figure: the file may go anywhere
+        name = self.auto_names.get(self.selected, {}).get(p.selected, "")
+        name = name if p.line.label is None else p.line.label
+        rows = [("line", plain(f"Line {p.selected + 1}" + (f": {name}" if name else "")), "")]
         if self.panel.region:
             start, end = self.panel.region
             rows.append(("region", "" if start is None else start, "" if end is None else end))
@@ -2540,23 +2610,23 @@ class Plotter(tk.Tk):
         """Put the readout on the clipboard, tab-separated, for a spreadsheet or notes."""
         rows = self._measurements()
         if not rows:
-            self._say("Nothing measured to copy.", error=True)
+            self._say(tr("Nothing measured to copy."), error=True)
             return
         self.clipboard_clear()
         self.clipboard_append("\n".join("\t".join(f"{v:.12g}" if isinstance(v, float) else str(v)
                                                   for v in row) for row in rows))
-        self._say("Copied the measurements.")
+        self._say(tr("Copied the measurements."))
 
     def export_measurements(self, path=None):
         """Write the readout to a CSV file (asking where, if `path` isn't given)."""
         rows = self._measurements()
         if not rows:
-            self._say("Nothing measured to export.", error=True)
+            self._say(tr("Nothing measured to export."), error=True)
             return
         if path is None:
             stem = Path(self.filename.get().strip() or self._default_name() or "plot").stem
             path = filedialog.asksaveasfilename(
-                parent=self, title="Export measurements", defaultextension=".csv",
+                parent=self, title=tr("Export measurements"), defaultextension=".csv",
                 initialdir=self.settings.get("output_dir") or Path.home(),
                 initialfile=f"{stem}-measure.csv",
                 filetypes=[("CSV", "*.csv"), ("All files", "*")])
@@ -2570,9 +2640,9 @@ class Plotter(tk.Tk):
         try:
             Path(path).write_text(out.getvalue(), encoding="utf-8")
         except OSError as err:
-            self._say(f"Couldn't export: {err}", error=True)
+            self._say(tr("Couldn't export: {err}", err=err), error=True)
             return
-        self._say(f"Exported {Path(path).name}")
+        self._say(tr("Exported {name}", name=Path(path).name))
 
     # --- colour -----------------------------------------------------------
 
@@ -2638,7 +2708,7 @@ class Plotter(tk.Tk):
         self.stop_picking()
         self._changed()  # a colour still being picked counts as that change
         if self.undo_state is None:
-            self._say("Nothing to undo.", error=True)
+            self._say(tr("Nothing to undo."), error=True)
             return
         state, self.undo_state = self.undo_state, None
         self.restoring = True
@@ -2648,7 +2718,7 @@ class Plotter(tk.Tk):
             self.restoring = False
         self.last_state = session.dump(self.panels, self.rows, self.cols, self.links)
         self.merging = False
-        self._say("Undone. (One step only.)")
+        self._say(tr("Undone. (One step only.)"))
 
     # --- sessions ---------------------------------------------------------
 
@@ -2675,7 +2745,7 @@ class Plotter(tk.Tk):
         if path is None:
             stem = Path(self.filename.get().strip() or "plot").stem
             path = filedialog.asksaveasfilename(
-                parent=self, title="Save session", defaultextension=".json",
+                parent=self, title=tr("Save session"), defaultextension=".json",
                 initialdir=self.settings.get("output_dir") or Path.home(),
                 initialfile=f"{stem}-session.json",
                 filetypes=[("GOOSE Plotter session", "*.json"), ("All files", "*")])
@@ -2689,16 +2759,16 @@ class Plotter(tk.Tk):
         try:
             Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         except OSError as err:
-            self._say(f"Couldn't save the session: {err}", error=True)
+            self._say(tr("Couldn't save the session: {err}", err=err), error=True)
             return
-        self._say(f"Saved session {Path(path).name}")
+        self._say(tr("Saved session {name}", name=Path(path).name))
 
     def open_session(self, path=None):
         """Open a session file: its data folder (if it's still there), layout and lines."""
         self.stop_picking()
         if path is None:
             path = filedialog.askopenfilename(
-                parent=self, title="Open session",
+                parent=self, title=tr("Open session"),
                 initialdir=self.settings.get("output_dir") or Path.home(),
                 filetypes=[("GOOSE Plotter session", "*.json"), ("All files", "*")])
             if not path:
@@ -2706,12 +2776,13 @@ class Plotter(tk.Tk):
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
             if not isinstance(data, dict) or session.KEY not in data:
-                raise ValueError("it isn't a GOOSE Plotter session")
+                raise ValueError(tr("it isn't a GOOSE Plotter session"))
             if not isinstance(data[session.KEY], int) or data[session.KEY] > session.VERSION:
-                raise ValueError("it's from a newer version of the plotter")
+                raise ValueError(tr("it's from a newer version of the plotter"))
             session.load(data)  # check it all before changing anything
         except (OSError, ValueError) as err:
-            self._say(f"Couldn't open {Path(path).name}: {err}", error=True)
+            self._say(tr("Couldn't open {name}: {err}", name=Path(path).name, err=err),
+                      error=True)
             return
         note, folder = "", data.get("data_dir")
         if isinstance(folder, str) and folder != self.data_dir:
@@ -2720,12 +2791,13 @@ class Plotter(tk.Tk):
                 try:
                     save_settings(self.settings)
                 except OSError as err:
-                    note = f"; couldn't remember its data folder: {err}"
+                    note = tr("; couldn't remember its data folder: {err}", err=err)
                 self._show_folder(self.data_label, "data_dir")
                 if error := self._read_folder():
                     note = f"; {error}"
             else:
-                note = f"; its data folder {folder} isn't there, so using this one"
+                note = tr("; its data folder {folder} isn't there, so using this one",
+                          folder=folder)
         selected = data.get("selected")
         try:
             selected = session.key_cell(selected)
@@ -2734,7 +2806,72 @@ class Plotter(tk.Tk):
         self._restore(data, selected)
         if isinstance(data.get("save_as"), str):
             self.filename.set(data["save_as"])
-        self._say(f"Opened session {Path(path).name}{note}", error=bool(note))
+        self._say(tr("Opened session {name}", name=Path(path).name) + note, error=bool(note))
+
+    # --- language ---------------------------------------------------------
+
+    def choose_language(self):
+        """Pop the language menu up under the flag."""
+        button = self.language_button
+        self._language_menu().tk_popup(button.winfo_rootx(),
+                                       button.winfo_rooty() + button.winfo_height())
+
+    def _language_menu(self):
+        """The languages, each named in its own script and font (简体中文 in
+        song ti even while the window is in English, or it shows boxes)."""
+        menu = tk.Menu(self, tearoff=0)
+        self.language_var = tk.StringVar(value=i18n.language)  # kept, as the menu reads it
+        for code, name in i18n.LANGUAGES.items():
+            own = i18n.FONTS.get(code)
+            font = {"font": own} if own and theme.has_family(self, own[0]) else {}
+            menu.add_radiobutton(label=name, value=code, variable=self.language_var,
+                                 command=lambda code=code: self.set_language(code), **font)
+        return menu
+
+    def set_language(self, code):
+        """Remember `code` and open the window again in it, carrying on where it was:
+        every text is made with the window, so it's the one way to change them all."""
+        if code == i18n.language or code not in i18n.LANGUAGES:
+            return
+        self.settings["language"] = code
+        try:
+            save_settings(self.settings)
+        except OSError as err:
+            self._say(tr("Couldn't remember that: {err}", err=err), error=True)
+            return
+        self.relaunch = self._relaunch_state()
+        self.after_idle(self.destroy)  # after the menu is done; main() opens the new one
+
+    def _relaunch_state(self):
+        """What the next window needs to carry on: the panels and links (as a
+        session holds them), which panel and lines are selected, the tab, the
+        name typed to save under and the undo step."""
+        typed = self.filename.get().strip()
+        return {"session": session.dump(self.panels, self.rows, self.cols, self.links),
+                "selected": self.selected,
+                "lines": {cell: p.selected for cell, p in self.panels.items()},
+                "tab": self.tab.get(), "undo": self.undo_state,
+                "save_as": typed if typed != self.auto_name else None}
+
+    def _resume(self, state):
+        """Carry on from `_relaunch_state`, making no undo step of it."""
+        self.restoring = True
+        try:
+            self._restore(state["session"], state["selected"])
+            for cell, index in state["lines"].items():
+                if cell in self.panels:
+                    self.panels[cell].selected = min(index, len(self.panels[cell].lines) - 1)
+            self._build_axes()
+            self._load_controls()
+        finally:
+            self.restoring = False
+        self.last_state = session.dump(self.panels, self.rows, self.cols, self.links)
+        self.undo_state = state["undo"]
+        if state["tab"] in self.tabs:
+            self.tab.set(state["tab"])
+            self._show_tab()
+        if state["save_as"]:
+            self.filename.set(state["save_as"])
 
     # --- line style -------------------------------------------------------
 
@@ -2774,7 +2911,7 @@ class Plotter(tk.Tk):
             if l.label is None and label == auto:
                 pass  # still the automatic name, as shown: keep it automatic
             elif label and (why := text_problem(label)):
-                problem = f"Can't draw that name: {plain(why)}"
+                problem = tr("Can't draw that name: {why}", why=plain(why))
             else:
                 l.label = label
         for name, value in settings.items():
@@ -2838,7 +2975,7 @@ class Plotter(tk.Tk):
             try:
                 save_settings(self.settings)
             except OSError as err:
-                self._say(f"Couldn't remember that: {err}", error=True)
+                self._say(tr("Couldn't remember that: {err}", err=err), error=True)
         return dialog.replace
 
     MAX_PIXELS = 20_000  # per side of a saved figure, to keep its memory in bounds
@@ -2870,21 +3007,21 @@ class Plotter(tk.Tk):
         inches = ((options["width"], options["height"]) if options["size"] == "custom"
                   else self.fig.get_size_inches())
         if max(inches) * options["dpi"] > self.MAX_PIXELS:
-            return f"That's too big: keep each side under {self.MAX_PIXELS} pixels."
+            return tr("That's too big: keep each side under {n} pixels.", n=self.MAX_PIXELS)
         self.settings["save_options"] = options
         try:
             save_settings(self.settings)
         except OSError as err:
-            return f"Couldn't remember them: {err}"
+            return tr("Couldn't remember them: {err}", err=err)
         return ""
 
     def save(self):
         if not any(l.shown for p in self.panels.values() for l in p.lines):
-            self._say("Nothing plotted to save.", error=True)
+            self._say(tr("Nothing plotted to save."), error=True)
             return
         if not self.settings.get("output_dir") and not self.choose_folder(
                 "output_dir", "Output folder"):
-            self._say("Choose an output folder to save into.", error=True)
+            self._say(tr("Choose an output folder to save into."), error=True)
             return
         out_dir = Path(self.settings["output_dir"])
         # Only a bare name: anything path-like would escape the output folder.
@@ -2897,10 +3034,10 @@ class Plotter(tk.Tk):
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as err:
-            self._say(f"Can't use the output folder: {err}", error=True)
+            self._say(tr("Can't use the output folder: {err}", err=err), error=True)
             return
         if (out_dir / name).exists() and not self._may_overwrite(name, out_dir):
-            self._say("Not saved: the file is already there.", error=True)
+            self._say(tr("Not saved: the file is already there."), error=True)
             return
         # The selection frame is for the screen, not the saved figure, and so
         # are Measure's marks unless their panel keeps them.
@@ -2926,8 +3063,9 @@ class Plotter(tk.Tk):
             for cell in self.axes:
                 self._frame(cell)
             self.canvas.draw()
-        self._say(f"Saved {out_dir.name}/{name}")
+        self._say(tr("Saved {path}", path=f"{out_dir.name}/{name}"))
 
 
 if __name__ == "__main__":
-    Plotter().mainloop()
+    from goose_plotter import main
+    main()

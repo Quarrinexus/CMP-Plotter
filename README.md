@@ -257,6 +257,15 @@ stay until it's done or cancelled.
 - **Lines**: + copies the selected line, - removes it. Each line has its own
   dataset, axes and functions; click a line in the list or on the plot to edit
   it.
+- **Language**: the flag beside Layout shows the window's language; click it
+  for English or 简体中文 (Simplified Chinese). The window opens again in
+  the language chosen, carrying on where it was (panels, selection, tab and
+  the undo step), and the choice is kept in `settings.json`. Only the
+  window's own text changes: what's drawn on the plot (titles, labels,
+  legends, Measure's marks, and so the names in the Lines list), file
+  names, exported measurements and the reasons a line can't be drawn stay
+  English, as do the plot toolbar, the Yes/No buttons on questions and the
+  inside of the file chooser (Tk's own).
 - **Layout**: hover to size the grid, click to apply. Click a panel to select it.
 - **Delete panel** (beside Layout, at the bottom of the column): deletes the selected panel. The
   panels after it, across then down, move back one place, and the grid loses
