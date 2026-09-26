@@ -92,21 +92,21 @@ def axes_icon(colour=theme.MUTED):
     return ImageTk.PhotoImage(image.resize((18, 22), Image.LANCZOS))
 
 
-def gear_icon(colour=theme.MUTED, size=20):
-    """A gear, for the settings button: eight teeth round a ring."""
-    k = 4  # drawn large and shrunk, for smooth edges
-    image = Image.new("RGBA", (size * k, size * k))
+def flag_icon(width=24, height=12):
+    """The Union Jack, for the language button: blue, a white saltire with a
+    thinner red one on it, then a white cross with a red one on it."""
+    k = 8  # drawn large and shrunk, for smooth edges
+    w, h = width * k, height * k
+    image = Image.new("RGBA", (w, h), "#012169")
     draw = ImageDraw.Draw(image)
-    c = size * k / 2
-    outer, body, hole = 0.5 * size * k, 0.36 * size * k, 0.15 * size * k
-    for i in range(8):
-        a = i * np.pi / 4
-        tooth = [(c + r * np.cos(a + d), c + r * np.sin(a + d))
-                 for r, d in ((body, -0.3), (outer, -0.2), (outer, 0.2), (body, 0.3))]
-        draw.polygon(tooth, fill=colour)
-    draw.ellipse((c - body, c - body, c + body, c + body), fill=colour)
-    draw.ellipse((c - hole, c - hole, c + hole, c + hole), fill=(0, 0, 0, 0))
-    return ImageTk.PhotoImage(image.resize((size, size), Image.LANCZOS))
+    for (x0, y0, x1, y1) in ((0, 0, w, h), (0, h, w, 0)):
+        draw.line((x0, y0, x1, y1), fill="white", width=h // 5)
+        draw.line((x0, y0, x1, y1), fill="#c8102e", width=h // 15)
+    draw.rectangle((w / 2 - h / 6, 0, w / 2 + h / 6, h), fill="white")
+    draw.rectangle((0, h / 3, w, 2 * h / 3), fill="white")
+    draw.rectangle((w / 2 - h / 10, 0, w / 2 + h / 10, h), fill="#c8102e")
+    draw.rectangle((0, h / 2 - h / 10, w, h / 2 + h / 10), fill="#c8102e")
+    return ImageTk.PhotoImage(image.resize((width, height), Image.LANCZOS))
 
 
 class Plotter(tk.Tk):
@@ -308,16 +308,17 @@ class Plotter(tk.Tk):
         buttons.pack(fill=tk.X, pady=(8, 0))
         buttons.columnconfigure((0, 1), weight=1, uniform="button")
         self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
-        # Layout shares its cell with a square settings button (nothing in it yet).
+        # Layout shares its cell with a square language button, before it (only
+        # English so far, so it does nothing yet).
         layout_cell = ttk.Frame(buttons)
         layout = ttk.Button(layout_cell, text="Layout", command=self.choose_layout)
         side = layout.winfo_reqheight()
-        gear = ttk.Frame(layout_cell, width=side, height=side)
-        gear.pack_propagate(False)
-        gear.pack(side=tk.RIGHT, padx=(6, 0))
-        self.gear_icon = gear_icon()
-        self.settings_button = ttk.Button(gear, image=self.gear_icon, style="Box.TButton")
-        self.settings_button.pack(fill=tk.BOTH, expand=True)
+        language = ttk.Frame(layout_cell, width=side, height=side)
+        language.pack_propagate(False)
+        language.pack(side=tk.LEFT, padx=(0, 6))
+        self.flag_icon = flag_icon()
+        self.language_button = ttk.Button(language, image=self.flag_icon, style="Box.TButton")
+        self.language_button.pack(fill=tk.BOTH, expand=True)
         layout.pack(side=tk.LEFT, fill=tk.X, expand=True)
         for i, button in enumerate((
                 layout_cell,
