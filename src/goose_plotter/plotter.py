@@ -90,7 +90,9 @@ def axes_icon(colour=theme.MUTED):
 
 class Plotter(tk.Tk):
     def __init__(self):
-        super().__init__()
+        # The window's class, for a desktop entry's StartupWMClass (Tk makes it
+        # "Goose-plotter"), so taskbars match it to the launcher, not "Tk".
+        super().__init__(className="goose-plotter")
         self.title("GOOSE Plotter")
         # The pixel goose; kept on self, as Tk drops an image nothing refers to.
         self.icon = tk.PhotoImage(file=Path(__file__).with_name("icon.png"))
