@@ -1,3 +1,5 @@
+<p align="center"><img src="src/goose_plotter/icon.png" alt="The GOOSE Plotter goose" width="160"></p>
+
 # GOOSE Plotter
 
 GOOSE, the **G**raphical **O**scillation **O**bservation **S**oftware
