@@ -87,9 +87,9 @@ keeps them.
 At the top of the controls column, **Files** opens to the folders, Data
 format and sessions (it starts closed once both folders are chosen). Under
 it Dataset, the Lines list and the axes are always shown, and the rest is in
-four tabs: **Process** (Smoothing, Background), **Splicing** (cutting lines
-to parts of their x), **Derive** (FFT, Derivative) and **Linking** (Linked
-data); their sections start open. If
+five tabs: **Process** (Smoothing, Background), **Splicing** (cutting lines
+to parts of their x), **Derive** (FFT, Derivative), **Linking** (Linked
+data) and **Measure** (reading numbers off the plot); their sections start open. If
 the selected line can't be drawn (a bad function, a
 file that won't load, a smoothing window that's too big), the reason shows
 in red under the Y axis until it's fixed or another line is selected.
@@ -223,6 +223,29 @@ stay until it's done or cancelled.
   **Freeze** pauses it, sharing nothing either way until **Unfreeze**, which
   sends the selected panel's settings across, carrying over what changed
   while it was frozen; the panel's other links carry on.
+- **Measure** (Measure tab): reads numbers off the selected line as it's
+  drawn (after its functions, cut, background and smoothing, and as an FFT or
+  derivative on those panels), in the plotted units, and changes nothing.
+  - **Region**: an x range typed, or dragged with **Pick**, shaded on the
+    plot; blank is the whole line, **Clear** goes back to it.
+  - **Readout**: the line's **Max** and **Min** (x and y), **Peak to peak**,
+    **Mean** and number of **Points** in the region. On an FFT panel the max is
+    refined with a parabola through its top three points, finer than one bin.
+    **Mark the max and min on the plot** shows where they are.
+  - **Points**: **Read points**, then click near the line: each click snaps
+    to the nearest drawn point, keeping the last two, with dx, dy and 1/dx
+    between them (on 1/B, 1/dx between neighbouring peaks is the frequency
+    F, to check against the FFT). Esc stops.
+  - **Peaks** (FFT panels): up to so many peaks in the region, highest first,
+    above a percentage of the highest, each refined like the max; **Mark
+    the peaks on the plot** labels them.
+  - **Marks in saved figures** keeps the marks in what Save figure writes
+    (they're left out otherwise); **Copy** puts the readout on the clipboard
+    as tab-separated text, and **Export CSV** writes it to a file.
+
+  The region, points and settings are the panel's own, saved in sessions
+  and undoable. They're in the plotted units, so changing x or its function
+  clears the region and points, and changing y clears the points.
 - The controls column scrolls (mouse wheel or its scrollbar) when it's taller
   than the window.
 - **Lines**: + copies the selected line, - removes it. Each line has its own

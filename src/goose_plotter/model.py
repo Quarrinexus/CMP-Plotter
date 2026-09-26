@@ -163,6 +163,14 @@ class Panel:
     grid: str = "major"  # a key of GRIDS
     grid_axis: str = "both"  # a key of GRID_AXES
     grid_style: str = "-"  # a key of GRID_STYLES
+    # Measure: an x region, in the plotted x as measure.tidy_region keeps it
+    # (() for the whole line), and up to two points read off the selected line.
+    region: tuple = ()
+    points: tuple = ()
+    marks: bool = False  # mark the max and min (or the peaks) on the plot
+    marks_saved: bool = False  # and keep them in saved figures
+    peak_count: int = 5  # FFT panels: how many peaks to list
+    peak_floor: float = 10.0  # ignoring those under this % of the highest
 
     @property
     def line(self):
@@ -219,10 +227,14 @@ GRID_STYLES = {"-": "Solid", "--": "Dashed", ":": "Dotted"}
 
 
 def clear_ranges(panel, axes="xy"):
-    """Forget typed ranges on those axes, e.g. when what's plotted on them changes."""
+    """Forget typed ranges on those axes, e.g. when what's plotted on them changes,
+    and what Measure holds in them: its region in x, its points in either."""
     for name in RANGES:
         if name[0] in axes:
             setattr(panel, name, None)
+    if "x" in axes:
+        panel.region = ()
+    panel.points = ()
 
 
 def clear_data_ranges(panel, axes="xy"):

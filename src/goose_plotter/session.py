@@ -3,7 +3,7 @@
 from dataclasses import fields
 import math
 
-from goose_plotter import background, smoothing, spectrum, splicing
+from goose_plotter import background, measure, smoothing, spectrum, splicing
 from goose_plotter.model import (GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, MARKERS, OPERATIONS,
                                  STYLES, SYNC, Line, Link, Panel, tidy_data_view)
 from goose_plotter.widgets import MAX_GRID
@@ -35,12 +35,15 @@ CHOICES = {Line: {"smooth": smoothing.METHODS, "background": background.MODES,
            Link: {}}
 
 # Fields holding a list, and what makes the saved one fit, per class as for CHOICES.
-TIDY = {Line: {"cuts": splicing.tidy}, Panel: {"data_view": tidy_data_view}, Link: {}}
+TIDY = {Line: {"cuts": splicing.tidy},
+        Panel: {"data_view": tidy_data_view, "region": measure.tidy_region,
+                "points": measure.tidy_points},
+        Link: {}}
 
 # Numbers that only make sense above 0, per class as for CHOICES; the
 # controls refuse the rest too.
 POSITIVE = {Line: {"width", "marker_size", "window", "span"},
-            Panel: {"f_max", "derivative_window"}, Link: set()}
+            Panel: {"f_max", "derivative_window", "peak_count"}, Link: set()}
 
 
 def cell_key(cell):

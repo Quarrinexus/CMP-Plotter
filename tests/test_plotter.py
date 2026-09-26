@@ -223,6 +223,117 @@ def test_undo_forgets_ranges_in_an_x_that_changed(app):
     assert app.panel.y_label == "B"
 
 
+def click(app, x, y, cell=None):
+    """A left click on the plot at data point (x, y) of `cell`'s axes."""
+    from matplotlib.backend_bases import MouseEvent
+    ax = app.axes[cell or app.selected]
+    px, py = ax.transData.transform((x, y))
+    app._on_click(MouseEvent("button_press_event", app.canvas, px, py, button=1))
+
+
+def test_measure_reads_a_region_without_touching_the_plot(app):
+    plot(app)
+    ax = app.axes[(0, 0)]
+    ax.set_xlim(8, 20)  # zoomed in: measuring mustn't undo it
+    app.region_from.set("10")
+    app.region_to.set("15")
+    app.set_region()
+    x, y = drawn(app)
+    inside = (x >= 10) & (x <= 15)
+    found = app.measured[(0, 0)]["extremes"]
+    assert found["max"][1] == pytest.approx(np.nanmax(y[inside]))
+    assert found["min"][1] == pytest.approx(np.nanmin(y[inside]))
+    assert found["points"] == inside.sum()
+    assert app.readout["Max"][1]["text"].startswith("y ")
+    app.mark_var.set(True)
+    app.apply_measure()
+    ax = app.axes[(0, 0)]
+    assert ax.get_xlim() == (8, 20)
+    assert len(ax.lines) == 1 and len(ax.collections) == 2  # max and min, not lines
+    # A new x function: 10 to 15 T means nothing in 1/B.
+    app.x_fn.set("1/x")
+    app.apply_controls()
+    assert app.panel.region == () and app.region_from.get() == ""
+
+
+def test_measure_reads_points_and_their_difference(app):
+    plot(app, x_fn="1/x")
+    x, y = drawn(app)
+    app.read_points()
+    for row in (1000, 3000):
+        click(app, x[row], y[row])
+    assert app.point_pick  # still reading, until Esc
+    assert app.panel.points == ((x[1000], y[1000]), (x[3000], y[3000]))
+    assert app.point_labels[2]["text"].startswith("dx ")
+    assert f"1/dx {1 / (x[3000] - x[1000]):.6g}" in app.point_labels[2]["text"]
+    click(app, x[5000], y[5000])  # a third replaces the first
+    assert app.panel.points[0] == (x[3000], y[3000])
+    app.toolbar.zoom()  # zooming in to pick closer: its clicks aren't points
+    click(app, x[4000], y[4000])
+    app.toolbar.zoom()
+    assert app.panel.points[1] == (x[5000], y[5000])
+    app.stop_picking()
+    assert not app.point_pick
+    app.undo()
+    assert app.panel.points[1] == (x[3000], y[3000])
+
+
+def test_measure_lists_an_ffts_peaks(app, tmp_path):
+    plot(app, x_fn="1/x")
+    app.fit_mode.set("Subtract")
+    app.apply_controls()
+    app.in_place("fft")
+    read = app.measured[(0, 0)]
+    assert read["peaks"][0][0] == pytest.approx(F, rel=0.02)
+    assert read["extremes"]["max"][0] == pytest.approx(F, rel=0.02)
+    assert app.peak_list.size() == len(read["peaks"]) >= 1
+    app.mark_var.set(True)
+    app.apply_measure()
+    assert len(app.axes[(0, 0)].lines) == 1
+    # Saved figures leave the marks out unless the panel keeps them.
+    seen = []
+    app.fig.savefig = lambda *a, **k: seen.append([m.get_visible() for m in app.marks[(0, 0)]])
+    app.save()
+    app.marks_saved_var.set(True)
+    app.apply_measure()
+    app.save()
+    assert not any(seen[0]) and all(seen[1])
+    assert all(m.get_visible() for m in app.marks[(0, 0)])
+    path = tmp_path / "m.csv"
+    app.export_measurements(path)
+    text = path.read_text()
+    assert text.startswith("what,x,y\n") and "\npeak 1," in text
+
+
+def test_measure_follows_the_selected_line(app):
+    plot(app)
+    app.add_line()
+    app.y.set(next(v for v in app.y.box["values"] if "M011" in v))
+    app.apply_controls()
+    app.mark_var.set(True)
+    app.apply_measure()
+    ax = app.axes[(0, 0)]
+    assert len(ax.lines) == 2 and len(ax.get_legend().get_texts()) == 2
+    for index in (0, 1):
+        app._set_selected_line((0, 0), index)
+        app._select_panel((0, 0))
+        _, y = drawn(app, index=index)
+        assert app.measured[(0, 0)]["extremes"]["max"][1] == np.nanmax(y)
+
+
+def test_measure_settings_are_saved_in_sessions(app, tmp_path):
+    plot(app)
+    app.set_region((5, 9))
+    x, y = drawn(app)
+    app.read_points()
+    click(app, x[100], y[100])
+    path = tmp_path / "s.json"
+    app.save_session(path)
+    app.set_region(())
+    app.open_session(path)
+    assert app.panel.region == (5.0, 9.0) and app.panel.points == ((x[100], y[100]),)
+
+
 def test_undo_one_step(app):
     plot(app)
     app.cut_from.set("5")
@@ -284,6 +395,21 @@ def test_no_tab_widens_the_controls_column(app):
         app._show_tab()
         app.update_idletasks()
         widths[tab] = app.side_inner.winfo_reqwidth()
+    # The Measure tab filled in: a region, two points, an FFT's peaks.
+    app.tab.set("Measure")
+    app._show_tab()
+    app.set_region((5, 9))
+    x, y = drawn(app)
+    app.read_points()
+    click(app, x[100], y[100])
+    click(app, x[200], y[200])
+    app.stop_picking()
+    app.update_idletasks()
+    widths["Measure, filled in"] = app.side_inner.winfo_reqwidth()
+    app.in_place("fft")
+    app.update_idletasks()
+    widths["Measure, peaks"] = app.side_inner.winfo_reqwidth()
+    app.undo_in_place()
     # The Derive tab's This panel row, on panels it has turned.
     app.tab.set("Derive")
     app._show_tab()

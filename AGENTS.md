@@ -49,6 +49,7 @@ mirror. If that folder isn't around this repo, use whatever data folder
 | `splicing.py` | cutting a line to x ranges, or those ranges out of it |
 | `spectrum.py` | FFT of a line against its plotted x, for FFT panels; `even_grid`, the binning it shares |
 | `derivative.py` | first and second derivatives on `even_grid`, for derivative panels |
+| `measure.py` | the Measure tab's reading: extremes in a region, peaks, parabola refining, snapping to a drawn point |
 | `axis_functions.py` | the Function boxes (`1/x`, `exp(y)`, ...) |
 | `datasets.py`, `format_dialog.py`, `profile.py`, `columns.py` | reading files and per-folder profiles |
 | `widgets.py` | the line and axes editors, colour picker, layout grid, overwrite question |
@@ -130,6 +131,29 @@ them (unlinked, deleted, removed by the layout). So:
   `at_mean_x`, since the half-step error there becomes noise once
   differentiated. Keep the FFT's binning as it is unless you mean to change
   its output.
+
+## Measure
+
+The Measure tab reads each panel's selected line **as drawn** (the artist's
+`get_xydata()`, so after F max and with a removed cut's NaN gaps), never
+from `_line_data`. What it holds is the panel's (`Panel.region`, `points`,
+`marks`, `marks_saved`, `peak_count`, `peak_floor`), not the line's, as a
+derived panel's lines are copies in other x units. So:
+
+- **Its marks are never lines.** `_draw_marks` uses `scatter`, `annotate` and
+  `axvspan` (clipped to the data, so it can't widen x), kept per cell in
+  `self.marks`; `ax.plot` or `axvline` would break the one artist per `Line`
+  rule. `save` hides them unless the panel's `marks_saved`.
+- What's read is kept in `self.measured` (not the Panel), so redraws make no
+  undo steps; points are stored as clicked and snapped again each draw.
+- `clear_ranges` clears the region with x and the points with either axis,
+  which covers every path that clears typed ranges; ⇅ on a data panel
+  clears them itself, as it swaps its ranges instead.
+- `_show_measure`, from `_load_controls`, redraws every panel's marks, as
+  selecting a line doesn't redraw but moves them. Measure edits redraw with
+  `keep="xy"`, so they keep the zoom.
+- **Read points** (`point_pick`) lasts until Esc or `stop_picking`; a click on
+  another panel ends it and selects that panel.
 
 ## Links
 

@@ -1,5 +1,7 @@
 """Interactive plotter window: pick datasets and axes, plot, save. See README.md."""
 
+import csv
+import io
 import json
 from pathlib import Path
 import tkinter as tk
@@ -14,7 +16,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageTk
 
 from goose_plotter.axis_functions import apply_function, is_identity, rename
-from goose_plotter import background, derivative, session, smoothing, spectrum, splicing, theme
+from goose_plotter import (background, derivative, measure, session, smoothing, spectrum,
+                           splicing, theme)
 from goose_plotter.columns import label, lookup, with_unit, without_unit
 from goose_plotter.model import (DATA_VIEW, GRID_AXES, GRID_STYLES, GRIDS, LEGENDS, RANGES, SYNC,
                                X_UNITS, Link, Panel, clear_data_ranges, clear_ranges,
@@ -137,6 +140,9 @@ class Plotter(tk.Tk):
         self.axes_popup = None
         self.save_popup = None
         self.picker = None  # the SpanSelector while a fit or cut range is being dragged
+        self.point_pick = False  # while clicks on the selected panel read points (Measure)
+        self.marks = {}  # cell -> Measure's artists on it: region, markers, their labels
+        self.measured = {}  # cell -> what Measure read off its selected line, as last drawn
         self.pick_target = "fit"  # which range it sets: "fit" or "cut"
         self.derive_pick = None  # (source cell, operation) while the user clicks where it goes
         self.link_pick = None  # cell while the user clicks a panel to link it to
@@ -276,6 +282,7 @@ class Plotter(tk.Tk):
         self._fft_box(self.tabs["Derive"])
         self._derivative_box(self.tabs["Derive"])
         self._link_box(self.tabs["Linking"])
+        self._measure_box(self.tabs["Measure"])
         self.tab.set("Process")
         self._show_tab()
         self.bind("<Escape>", lambda _: self.stop_picking())
@@ -1231,6 +1238,7 @@ class Plotter(tk.Tk):
         self._show_axes()
         self.fft_window.show()
         self.derivative_order.show()
+        self._show_measure()
         self.link_status()
         self.delete_button.state(["!disabled" if len(self.panels) > 1 else "disabled"])
         self._say("")
@@ -1486,6 +1494,7 @@ class Plotter(tk.Tk):
         derived, fft = p.derived, p.operation == "fft"
         ax.clear()
         self.artists[cell] = {}
+        self.marks[cell] = []  # cleared with the axes
         drawn, indices, x_labels, y_labels, errors, resolutions = [], [], [], [], [], []
         self.auto_text[cell], self.auto_names[cell] = {}, {}
         for i, (l, colour) in enumerate(zip(p.lines, line_colours(p, self.profile.samples))):
@@ -1574,6 +1583,7 @@ class Plotter(tk.Tk):
             self._hint(ax, errors[0], colour=theme.ERROR, size=9)
         else:
             self._hint(ax, "Pick a dataset" if self.data_dir else "Pick a data folder")
+        self._draw_marks(cell)
         self._frame(cell)
         self.toolbar.update()  # new data, so reset the toolbar's zoom history
 
@@ -1618,6 +1628,13 @@ class Plotter(tk.Tk):
         cell = next((c for c, ax in self.axes.items() if ax is event.inaxes), None)
         if cell is None:
             return
+        if self.point_pick:  # reading points off the selected panel's line
+            if self.toolbar.mode or event.button != 1:  # zooming or panning to pick closer
+                return
+            if cell == self.selected:
+                self._read_point(event)
+                return
+            self.stop_picking()  # another panel: select it instead
         if self.derive_pick is not None:  # the click chooses where it goes
             source, operation = self.derive_pick
             self._put_derived(source, cell, operation)
@@ -1688,6 +1705,7 @@ class Plotter(tk.Tk):
         else:  # its ranges swap with its axes; linked panels' clear as their x and y change
             p.x_min, p.x_max, p.y_min, p.y_max = p.y_min, p.y_max, p.x_min, p.x_max
             p.x_label, p.y_label = p.y_label, p.x_label
+            p.region, p.points = (), ()  # Measure's are in the old x
         for l in p.lines:
             l.x, l.y = l.y, l.x
             l.x_fn, l.y_fn = rename(l.y_fn.strip(), "y", "x"), rename(l.x_fn.strip(), "x", "y")
@@ -2126,8 +2144,8 @@ class Plotter(tk.Tk):
         or with `target` "cut" its cut range."""
         self.stop_picking()
         ax = self.axes[self.selected]
-        what = "fit" if target == "fit" else "cut"
-        if self.panel.derived:
+        what = {"fit": "fit", "cut": "cut", "measure": "measuring"}[target]
+        if self.panel.derived and target != "measure":
             self._say(f"Pick the {what} range on the data panel, not its "
                       f"{self._kind(self.panel.operation)}.", error=True)
             return
@@ -2152,6 +2170,9 @@ class Plotter(tk.Tk):
         if start == end:  # a click, not a drag
             return
         # 5 significant figures: plenty for a range, and tidy in the boxes.
+        if self.pick_target == "measure":
+            self.set_region((float(f"{start:.5g}"), float(f"{end:.5g}")))
+            return
         if self.pick_target == "cut":  # a new range, beside any there are
             self.add_cut((float(f"{start:.5g}"), float(f"{end:.5g}")))
             return
@@ -2163,8 +2184,9 @@ class Plotter(tk.Tk):
 
     def stop_picking(self):
         """End a fit-range drag or a pick of where a derived panel or link goes, if one is under way."""
-        if self.derive_pick is not None or self.link_pick is not None:
+        if self.derive_pick is not None or self.link_pick is not None or self.point_pick:
             self.derive_pick = self.link_pick = None
+            self.point_pick = False
             self._say("")
         if self.picker:
             self.picker.disconnect_events()
@@ -2172,6 +2194,361 @@ class Plotter(tk.Tk):
             self.picker = None
             self.canvas.draw_idle()
             self._say("")
+
+    # --- measure ----------------------------------------------------------
+
+    def _measure_box(self, parent):
+        """Measure: the selected line's numbers in an x region, points read off
+        it, and an FFT's peaks. It reads what's drawn and changes none of it.
+        Only what has something to show is shown, so the tab stays short."""
+        self.region_from, self.region_to = tk.StringVar(), tk.StringVar()
+        self.mark_var, self.marks_saved_var = tk.BooleanVar(), tk.BooleanVar()
+        self.peak_count, self.peak_floor = tk.StringVar(), tk.StringVar()
+        body = ttk.Frame(parent)
+        body.pack(anchor=tk.W, fill=tk.X, pady=(8, 0))
+
+        def heading(parent, text, pady=(8, 0)):
+            ttk.Label(parent, text=text, foreground=theme.MUTED).pack(anchor=tk.W, pady=pady)
+
+        def button_row(parent, buttons, pady=(4, 0)):
+            """Buttons in equal shares of the column (width 1, so they can't widen it)."""
+            row = ttk.Frame(parent)
+            row.pack(fill=tk.X, pady=pady)
+            row.columnconfigure(tuple(range(len(buttons))), weight=1, uniform="measure")
+            for i, (text, command) in enumerate(buttons):
+                ttk.Button(row, text=text, width=1, command=command).grid(
+                    row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
+
+        # The region: blank ends are the whole line.
+        row = ttk.Frame(body)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(row, text="Region", foreground=theme.MUTED).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(row, text="x").pack(side=tk.LEFT)
+        start = ttk.Entry(row, textvariable=self.region_from, width=8)
+        start.pack(side=tk.LEFT, padx=(4, 4))
+        ttk.Label(row, text="to").pack(side=tk.LEFT)
+        end = ttk.Entry(row, textvariable=self.region_to, width=8)
+        end.pack(side=tk.LEFT, padx=(4, 0))
+        for box in (start, end):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.set_region())
+        button_row(body, (("Set", self.set_region), ("Pick", lambda: self.pick_range("measure")),
+                          ("Clear", lambda: self.set_region(()))))
+
+        # The readout: which line, then its numbers in the region, once it's drawn.
+        self.readout_line = ttk.Label(body, foreground=theme.MUTED, wraplength=300)
+        self.readout_line.pack(anchor=tk.W, pady=(8, 0))
+        self.readout_table = ttk.Frame(body)
+        self.readout_table.columnconfigure((1, 2), weight=1, uniform="readout")
+        self.readout = {}
+        for r, name in enumerate(("Max", "Min", "Peak to peak", "Mean", "Points")):
+            ttk.Label(self.readout_table, text=name).grid(row=r, column=0, sticky="w",
+                                                          padx=(0, 8))
+            self.readout[name] = [ttk.Label(self.readout_table, width=1),
+                                  ttk.Label(self.readout_table, width=1)]
+            for c, label in enumerate(self.readout[name]):
+                label.grid(row=r, column=c + 1, sticky="ew")
+        self.mark_button = ttk.Checkbutton(body, variable=self.mark_var,
+                                           command=self.apply_measure)
+        self.readout_parts = (self.readout_table, self.mark_button)
+
+        # Points read off the line: a row each, and what's between two.
+        points = ttk.Frame(body)
+        points.pack(fill=tk.X, pady=(8, 0))
+        button_row(points, (("Read points", self.read_points), ("Clear points", self.clear_points)),
+                   pady=0)
+        self.point_labels = [ttk.Label(points, wraplength=300) for _ in range(3)]
+
+        # An FFT's peaks, only on an FFT panel.
+        self.peak_section = ttk.Frame(body)
+        heading(self.peak_section, "Peaks")
+        row = ttk.Frame(self.peak_section)
+        row.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(row, text="Up to").pack(side=tk.LEFT)
+        count = ttk.Spinbox(row, textvariable=self.peak_count, from_=1, to=50, width=3,
+                            command=self.apply_measure)
+        count.pack(side=tk.LEFT, padx=(4, 6))
+        ttk.Label(row, text="over").pack(side=tk.LEFT)
+        floor = ttk.Entry(row, textvariable=self.peak_floor, width=4)
+        floor.pack(side=tk.LEFT, padx=(4, 4))
+        ttk.Label(row, text="% of the top").pack(side=tk.LEFT)
+        for box in (count, floor):
+            for key in ("<Return>", "<KP_Enter>"):
+                box.bind(key, lambda _: self.apply_measure())
+        self.peak_list = tk.Listbox(self.peak_section, height=5, width=1,
+                                    exportselection=False, activestyle="none",
+                                    foreground=theme.TEXT, selectbackground=theme.ACCENT_SOFT,
+                                    selectforeground=theme.TEXT)
+        self.peak_list.pack(fill=tk.X, pady=(4, 0))
+
+        # Taking the numbers away.
+        self.keep_section = ttk.Frame(body)
+        self.keep_section.pack(fill=tk.X, pady=(8, 0))
+        ttk.Checkbutton(self.keep_section, text="Marks in saved figures",
+                        variable=self.marks_saved_var,
+                        command=self.apply_measure).pack(anchor=tk.W)
+        button_row(self.keep_section, (("Copy", self.copy_measurements),
+                                       ("Export CSV", self.export_measurements)))
+
+    def _drawn(self, cell):
+        """(xy as drawn, line index) for a panel's selected line, or None if it isn't drawn."""
+        p = self.panels[cell]
+        artist = next((a for a, i in self.artists.get(cell, {}).items() if i == p.selected), None)
+        return None if artist is None else (artist.get_xydata(), p.selected)
+
+    def _read(self, cell):
+        """What Measure reads off a panel's selected line: its numbers in the
+        region, an FFT's peaks, and the points snapped to it as drawn now."""
+        drawn = self._drawn(cell)
+        if drawn is None:
+            return None
+        xy, _ = drawn
+        p, ax = self.panels[cell], self.axes[cell]
+        ax.get_xlim(), ax.get_ylim()  # brings the view up to date, for snapping in pixels
+        fft = p.operation == "fft"
+        x, y = xy[:, 0], xy[:, 1]
+        points = [measure.snap(xy, point, ax.transData.transform) for point in p.points]
+        return {"extremes": measure.extremes(x, y, p.region, even=fft),
+                "peaks": measure.peaks(x, y, p.region, p.peak_count, max(p.peak_floor, 0))
+                if fft else [],
+                "points": [point for point in points if point is not None], "fft": fft}
+
+    def _draw_marks(self, cell):
+        """Draw Measure's region, marks and points on a panel, replacing any drawn.
+        None of it is a line (scatter, text and a span), so the legend and the
+        one artist per line that selection relies on are untouched."""
+        for artist in self.marks.get(cell, []):
+            try:
+                artist.remove()
+            except (ValueError, NotImplementedError):  # already gone with the axes
+                pass
+        self.marks[cell] = marks = []
+        read = self.measured[cell] = self._read(cell)
+        if read is None:
+            return
+        ax, p = self.axes[cell], self.panels[cell]
+        xy, _ = self._drawn(cell)
+        finite = xy[np.isfinite(xy).all(axis=1), 0]
+        if p.region and len(finite):  # shaded, but only over the data, so it can't widen x
+            start, end = p.region
+            low = finite.min() if start is None else max(start, finite.min())
+            high = finite.max() if end is None else min(end, finite.max())
+            if low < high:
+                marks.append(ax.axvspan(low, high, color=theme.ACCENT, alpha=0.08, lw=0,
+                                        zorder=0))
+        style = {"color": theme.TEXT, "fontsize": 7, "textcoords": "offset points",
+                 "ha": "center", "zorder": 5}
+        if p.marks:
+            if read["fft"]:
+                for x, y in read["peaks"]:
+                    marks.append(ax.scatter([x], [y], marker="v", s=16, color=theme.TEXT,
+                                            zorder=5))
+                    marks.append(ax.annotate(f"{x:.4g}", (x, y), xytext=(0, 5), **style))
+            elif read["extremes"]:
+                for key, below in (("max", False), ("min", True)):
+                    x, y = read["extremes"][key]
+                    marks.append(ax.scatter([x], [y], marker="v" if below else "^", s=16,
+                                            color=theme.TEXT, zorder=5))
+                    marks.append(ax.annotate(f"{key} {y:.4g}", (x, y),
+                                             xytext=(0, -9 if below else 5), **style))
+        for n, (x, y) in enumerate(read["points"], 1):
+            marks.append(ax.scatter([x], [y], s=30, facecolors="none", edgecolors=theme.ERROR,
+                                    linewidths=1.2, zorder=6))
+            marks.append(ax.annotate(str(n), (x, y), xytext=(6, 4), **(style | {
+                "color": theme.ERROR, "ha": "left"})))
+
+    def _show_measure(self):
+        """Fill the Measure tab from the selected panel, and redraw every panel's
+        marks, as they follow each panel's selected line."""
+        for cell in self.axes:
+            self._draw_marks(cell)
+        self.canvas.draw_idle()
+        p = self.panel
+        start, end = p.region or (None, None)
+        self.region_from.set("" if start is None else f"{start:.12g}")
+        self.region_to.set("" if end is None else f"{end:.12g}")
+        self.mark_var.set(p.marks)
+        self.marks_saved_var.set(p.marks_saved)
+        self.peak_count.set(p.peak_count)
+        self.peak_floor.set(f"{p.peak_floor:g}")
+        read = self.measured.get(self.selected)
+        fft = p.operation == "fft"
+        self.mark_button["text"] = ("Mark the peaks on the plot" if fft else
+                                    "Mark the max and min on the plot")
+        name = self.auto_names.get(self.selected, {}).get(p.selected, "")
+        name = name if p.line.label is None else p.line.label
+        self.readout_line["text"] = (plain(f"Line {p.selected + 1}" + (f": {name}" if name else ""))
+                                     if read else "Plot the selected line to measure it.")
+        found = read and read["extremes"]
+        rows = {"Max": found and found["max"], "Min": found and found["min"],
+                "Peak to peak": found and (None, found["range"]),
+                "Mean": found and (None, found["mean"]),
+                "Points": found and (None, found["points"])}
+        for name, value in rows.items():
+            x_label, y_label = self.readout[name]
+            x_label["text"] = f"x {value[0]:.6g}" if value and value[0] is not None else ""
+            y_label["text"] = ((f"{value[1]}" if name == "Points" else f"y {value[1]:.6g}")
+                               if value else "")
+        if read and not found:
+            self.readout_line["text"] += " (no points in the region)"
+        for part in self.readout_parts:  # only once there's something to read
+            part.pack_forget()
+        if read:
+            if found:
+                self.readout_table.pack(fill=tk.X, pady=(2, 0), after=self.readout_line)
+            self.mark_button.pack(anchor=tk.W, pady=(4, 0),
+                                  after=self.readout_table if found else self.readout_line)
+        points = read["points"] if read else []
+        texts = [f"{n}   x {x:.6g}   y {y:.6g}" for n, (x, y) in enumerate(points, 1)]
+        if len(points) == 2:
+            dx, dy = points[1][0] - points[0][0], points[1][1] - points[0][1]
+            texts.append(f"dx {dx:.6g}   dy {dy:.6g}" + (f"   1/dx {1 / dx:.6g}" if dx else ""))
+        for label in self.point_labels:  # a row per point, none when there aren't any
+            label.pack_forget()
+            label["text"] = ""
+        for label, text in zip(self.point_labels, texts):
+            label["text"] = text
+            label.pack(anchor=tk.W)
+        self.peak_list.delete(0, tk.END)
+        if fft:
+            self.peak_section.pack(fill=tk.X, before=self.keep_section)
+            for x, y in read["peaks"] if read else []:
+                self.peak_list.insert(tk.END, f"x {x:.6g}   y {y:.4g}")
+        else:
+            self.peak_section.pack_forget()
+
+    def _typed_region(self):
+        """The region typed in Measure's boxes, as measure.tidy_region keeps it,
+        or None, saying why, if a box isn't a number."""
+        ends = []
+        for var in (self.region_from, self.region_to):
+            text = var.get().strip()
+            try:
+                value = float(text) if text else None
+            except ValueError:
+                value = np.nan
+            if value is not None and not np.isfinite(value):
+                self._say(f"'{text}' isn't a number.", error=True)
+                return None
+            ends.append(value)
+        return measure.tidy_region(ends)
+
+    def set_region(self, region=None):
+        """Measure the selected line in `region` (by default the one typed), or
+        with () the whole line."""
+        self.stop_picking()
+        region = self._typed_region() if region is None else measure.tidy_region(region)
+        if region is None:
+            return
+        self.panel.region = region
+        self._redraw_selected(keep="xy")
+
+    def apply_measure(self):
+        """Copy Measure's ticks and peak settings into the selected panel."""
+        p = self.panel
+        p.marks, p.marks_saved = self.mark_var.get(), self.marks_saved_var.get()
+        try:
+            p.peak_count = max(1, int(self.peak_count.get()))
+        except ValueError:  # not a number: keep the old one (shown again below)
+            pass
+        try:
+            floor = float(self.peak_floor.get())
+            p.peak_floor = floor if np.isfinite(floor) and floor >= 0 else p.peak_floor
+        except ValueError:
+            pass
+        self._redraw_selected(keep="xy")
+
+    def read_points(self):
+        """Clicks on the selected panel read points off its selected line, until Esc."""
+        self.stop_picking()
+        if self._drawn(self.selected) is None:
+            self._say("Plot the selected line first, then read points off it.", error=True)
+            return
+        if self.toolbar.mode:
+            self._say("Turn off the toolbar's zoom or pan first.", error=True)
+            return
+        self.point_pick = True
+        self._say("Click near the line to read a point; Esc stops.")
+
+    def _read_point(self, event):
+        drawn = self._drawn(self.selected)
+        if drawn is None or event.xdata is None:
+            return
+        point = measure.snap(drawn[0], (event.xdata, event.ydata),
+                             self.axes[self.selected].transData.transform)
+        if point is None:
+            return
+        self.panel.points = (self.panel.points + (point,))[-2:]
+        self._redraw_selected(keep="xy")
+        self._say("Click near the line to read a point; Esc stops.")
+
+    def clear_points(self):
+        self.stop_picking()
+        self.panel.points = ()
+        self._redraw_selected(keep="xy")
+
+    def _measurements(self):
+        """Measure's readout for the selected line, as rows of (what, x, y)."""
+        read = self.measured.get(self.selected)
+        if not read:
+            return []
+        rows = [("line", self.readout_line["text"], "")]
+        if self.panel.region:
+            start, end = self.panel.region
+            rows.append(("region", "" if start is None else start, "" if end is None else end))
+        found = read["extremes"]
+        if found:
+            rows += [("max", *found["max"]), ("min", *found["min"]),
+                     ("peak to peak", "", found["range"]), ("mean", "", found["mean"]),
+                     ("points", "", found["points"])]
+        for n, point in enumerate(read["points"], 1):
+            rows.append((f"point {n}", *point))
+        if len(read["points"]) == 2:
+            (x1, y1), (x2, y2) = read["points"]
+            rows.append(("difference", x2 - x1, y2 - y1))
+            if x2 != x1:
+                rows.append(("1/dx", 1 / (x2 - x1), ""))
+        for n, peak in enumerate(read["peaks"], 1):
+            rows.append((f"peak {n}", *peak))
+        return rows
+
+    def copy_measurements(self):
+        """Put the readout on the clipboard, tab-separated, for a spreadsheet or notes."""
+        rows = self._measurements()
+        if not rows:
+            self._say("Nothing measured to copy.", error=True)
+            return
+        self.clipboard_clear()
+        self.clipboard_append("\n".join("\t".join(f"{v:.12g}" if isinstance(v, float) else str(v)
+                                                  for v in row) for row in rows))
+        self._say("Copied the measurements.")
+
+    def export_measurements(self, path=None):
+        """Write the readout to a CSV file (asking where, if `path` isn't given)."""
+        rows = self._measurements()
+        if not rows:
+            self._say("Nothing measured to export.", error=True)
+            return
+        if path is None:
+            stem = Path(self.filename.get().strip() or self._default_name() or "plot").stem
+            path = filedialog.asksaveasfilename(
+                parent=self, title="Export measurements", defaultextension=".csv",
+                initialdir=self.settings.get("output_dir") or Path.home(),
+                initialfile=f"{stem}-measure.csv",
+                filetypes=[("CSV", "*.csv"), ("All files", "*")])
+            if not path:
+                return
+        out = io.StringIO()
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(("what", "x", "y"))
+        writer.writerows([f"{v:.12g}" if isinstance(v, float) else v for v in row]
+                         for row in rows)
+        try:
+            Path(path).write_text(out.getvalue(), encoding="utf-8")
+        except OSError as err:
+            self._say(f"Couldn't export: {err}", error=True)
+            return
+        self._say(f"Exported {Path(path).name}")
 
     # --- colour -----------------------------------------------------------
 
@@ -2402,7 +2779,8 @@ class Plotter(tk.Tk):
         self.status_timer = None
         # Instructions for a pick under way ("Click the panel...") stay until
         # it ends, which clears them.
-        if self.derive_pick is None and self.link_pick is None and not self.picker:
+        if (self.derive_pick is None and self.link_pick is None and not self.picker
+                and not self.point_pick):
             self.status.configure(text="")
 
     def _default_name(self):
@@ -2500,10 +2878,15 @@ class Plotter(tk.Tk):
         if (out_dir / name).exists() and not self._may_overwrite(name, out_dir):
             self._say("Not saved: the file is already there.", error=True)
             return
-        # The selection frame is for the screen, not the saved figure.
+        # The selection frame is for the screen, not the saved figure, and so
+        # are Measure's marks unless their panel keeps them.
         selected, self.selected = self.selected, None
         for cell in self.axes:
             self._frame(cell)
+        hidden = [a for cell, p in self.panels.items() if not p.marks_saved
+                  for a in self.marks.get(cell, []) if a.get_visible()]
+        for artist in hidden:
+            artist.set_visible(False)
         options = self._save_options()
         size = self.fig.get_size_inches()
         try:
@@ -2513,6 +2896,8 @@ class Plotter(tk.Tk):
                              transparent=options["transparent"])
         finally:
             self.fig.set_size_inches(size, forward=False)
+            for artist in hidden:
+                artist.set_visible(True)
             self.selected = selected
             for cell in self.axes:
                 self._frame(cell)
