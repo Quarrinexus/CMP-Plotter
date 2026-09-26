@@ -89,6 +89,23 @@ def axes_icon(colour=theme.MUTED):
     return ImageTk.PhotoImage(image.resize((18, 22), Image.LANCZOS))
 
 
+def gear_icon(colour=theme.MUTED, size=20):
+    """A gear, for the settings button: eight teeth round a ring."""
+    k = 4  # drawn large and shrunk, for smooth edges
+    image = Image.new("RGBA", (size * k, size * k))
+    draw = ImageDraw.Draw(image)
+    c = size * k / 2
+    outer, body, hole = 0.5 * size * k, 0.36 * size * k, 0.15 * size * k
+    for i in range(8):
+        a = i * np.pi / 4
+        tooth = [(c + r * np.cos(a + d), c + r * np.sin(a + d))
+                 for r, d in ((body, -0.3), (outer, -0.2), (outer, 0.2), (body, 0.3))]
+        draw.polygon(tooth, fill=colour)
+    draw.ellipse((c - body, c - body, c + body, c + body), fill=colour)
+    draw.ellipse((c - hole, c - hole, c + hole, c + hole), fill=(0, 0, 0, 0))
+    return ImageTk.PhotoImage(image.resize((size, size), Image.LANCZOS))
+
+
 class Plotter(tk.Tk):
     def __init__(self):
         # The window's class, for a desktop entry's StartupWMClass (Tk makes it
@@ -248,19 +265,10 @@ class Plotter(tk.Tk):
         # The rest is in tabs, one shown at a time, so the column stays short.
         # Not a ttk.Notebook: that is as tall as its tallest tab.
         ttk.Separator(controls).pack(fill=tk.X, pady=(10, 8))
-        strip = ttk.Frame(controls)
-        strip.pack(anchor=tk.W, fill=tk.X)
         self.tab = tk.StringVar()
-        self.tabs = {}
-        # The column's width shared by the names' widths, so a longer name isn't
-        # cut off; width 1, so the strip never widens the column.
-        font = tkfont.Font(self, font=ttk.Style().lookup("Tab.Toolbutton", "font") or "TkDefaultFont")
-        for i, name in enumerate(("Process", "Splicing", "Derive", "Linking")):
-            strip.columnconfigure(i, weight=font.measure(name) + 4)  # + the padding
-            ttk.Radiobutton(strip, text=name, value=name, variable=self.tab, width=1,
-                            style="Tab.Toolbutton", command=self._show_tab).grid(
-                row=0, column=i, sticky="ew", padx=(0 if i == 0 else 2, 0))
-            self.tabs[name] = ttk.Frame(controls)
+        self.tabs = {name: ttk.Frame(controls)
+                     for name in ("Process", "Splicing", "Derive", "Linking", "Measure")}
+        self._tab_strip(controls)
         # Smoothing's and FFT's toggles add the 10 px above them.
         self._smoothing_box(self.tabs["Process"])
         self._background_box(self.tabs["Process"])
@@ -293,8 +301,19 @@ class Plotter(tk.Tk):
         buttons.pack(fill=tk.X, pady=(8, 0))
         buttons.columnconfigure((0, 1), weight=1, uniform="button")
         self.delete_button = ttk.Button(buttons, text="Delete panel", command=self.delete_panel)
+        # Layout shares its cell with a square settings button (nothing in it yet).
+        layout_cell = ttk.Frame(buttons)
+        layout = ttk.Button(layout_cell, text="Layout", command=self.choose_layout)
+        side = layout.winfo_reqheight()
+        gear = ttk.Frame(layout_cell, width=side, height=side)
+        gear.pack_propagate(False)
+        gear.pack(side=tk.RIGHT, padx=(6, 0))
+        self.gear_icon = gear_icon()
+        self.settings_button = ttk.Button(gear, image=self.gear_icon, style="Box.TButton")
+        self.settings_button.pack(fill=tk.BOTH, expand=True)
+        layout.pack(side=tk.LEFT, fill=tk.X, expand=True)
         for i, button in enumerate((
-                ttk.Button(buttons, text="Layout", command=self.choose_layout),
+                layout_cell,
                 self.delete_button,
                 ttk.Button(buttons, text="Saving Options", command=self.open_save_options),
                 ttk.Button(buttons, text="Save figure", command=self.save))):
@@ -382,6 +401,72 @@ class Plotter(tk.Tk):
         elif self.side_scroll.winfo_manager():
             self.side_scroll.pack_forget()
             self.side.yview_moveto(0)
+
+    # The tab strip's shape: each tab's slanted sides, and its padding beside the name.
+    TAB_SLANT, TAB_PAD, TAB_HEIGHT = 5, 2, 24
+
+    def _tab_strip(self, parent):
+        """The tabs, drawn as in a notebook: each as wide as its name, with slanted
+        sides, the chosen one in front and open at the bottom onto its section,
+        a line under the rest. Width 1, so it never widens the column."""
+        base = tkfont.nametofont("TkDefaultFont").actual()
+        size = base["size"] - 1 if base["size"] > 0 else base["size"] + 1
+        font = tkfont.Font(self, family=base["family"], size=size)
+        strip = tk.Canvas(parent, width=1, height=self.TAB_HEIGHT + 1, highlightthickness=0,
+                          borderwidth=0, background=theme.BACKGROUND, cursor="hand2")
+        strip.pack(anchor=tk.W, fill=tk.X)
+        self.tab_strip = strip
+        slant, pad, height = self.TAB_SLANT, self.TAB_PAD, self.TAB_HEIGHT
+        spans, x = {}, 0
+        for name in self.tabs:  # each tab's left and right, overlapping by a slant
+            width = font.measure(name) + 2 * (slant + pad)
+            spans[name] = (x, x + width)
+            x += width - slant
+        strip.spans = spans
+        hovered = [None]
+
+        def draw(_=None):
+            strip.delete("all")
+            chosen = self.tab.get()
+            bottom = height
+            strip.create_line(0, bottom, strip.winfo_width(), bottom, fill=theme.BORDER)
+            # Back to front: the others from the outside in, then the chosen one.
+            order = [n for n in reversed(self.tabs) if n != chosen] + [chosen]
+            for name in order:
+                left, right = spans[name]
+                top = 1 if name == chosen else 3
+                fill = (theme.BACKGROUND if name == chosen else
+                        theme.HOVER if name == hovered[0] else theme.PRESSED)
+                shape = (left, bottom, left + slant, top, right - slant, top, right, bottom)
+                strip.create_polygon(shape, fill=fill, outline="")
+                strip.create_line(shape, fill=theme.BORDER)
+                if name == chosen:  # open onto the section below
+                    strip.create_line(left + 1, bottom, right, bottom, fill=theme.BACKGROUND)
+                strip.create_text((left + right) / 2, (top + bottom) / 2 - 1, text=name,
+                                  font=font, fill=theme.TEXT if name == chosen else theme.MUTED)
+
+        def at(x):
+            """The tab under x: the chosen one where two overlap, as it's in front."""
+            under = [n for n, (left, right) in spans.items() if left <= x <= right]
+            return self.tab.get() if self.tab.get() in under else (under[0] if under else None)
+
+        def click(event):
+            name = at(event.x)
+            if name:
+                self.tab.set(name)
+                self._show_tab()
+
+        def hover(event):
+            name = at(event.x) if event.type != tk.EventType.Leave else None
+            if name != hovered[0]:
+                hovered[0] = name
+                draw()
+
+        strip.bind("<Configure>", draw)
+        strip.bind("<Button-1>", click)
+        strip.bind("<Motion>", hover)
+        strip.bind("<Leave>", hover)
+        self.tab.trace_add("write", lambda *_: draw())
 
     def _show_tab(self):
         """Show the chosen tab's frame and hide the others."""

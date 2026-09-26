@@ -260,6 +260,17 @@ def test_save_figure(app, tmp_path):
     assert (tmp_path / "output" / "run_005_M006_AH_vs_Norminal_FIeld.png").is_file()
 
 
+def test_clicking_a_tab_shows_it(app):
+    plot(app)
+    app.update()
+    strip = app.tab_strip
+    assert max(right for _, right in strip.spans.values()) <= strip.winfo_width()  # all fit
+    left, right = strip.spans["Derive"]
+    strip.event_generate("<Button-1>", x=(left + right) // 2, y=10)
+    assert app.tab.get() == "Derive"
+    assert app.tabs["Derive"].winfo_manager() and not app.tabs["Process"].winfo_manager()
+
+
 def test_no_tab_widens_the_controls_column(app):
     """Every tab leaves the column as wide as the controls above the tabs make
     it, so switching tabs never pushes the plot over."""

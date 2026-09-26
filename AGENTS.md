@@ -231,9 +231,11 @@ isn't a step. Opening a session is undoable, but not its data-folder switch.
 - **Zoom survives redraws** only for limits the user set (zooming turns
   matplotlib's autoscale off). `_redraw_selected(keep)` restores those and
   pushes the full view first so the toolbar's Home still works.
-- **The tab strip shares the column's width by the tabs' names**, so a
-  longer name isn't cut off. Each is `width=1`, so the strip never widens
-  the column.
+- **The tab strip is drawn** on a canvas (`_tab_strip`), not made of
+  buttons, for the notebook look: each tab as wide as its name, slanted
+  sides, the chosen one in front and open onto its section. It's `width=1`,
+  so it never widens the column; `test_clicking_a_tab_shows_it` checks the
+  tabs still fit.
 - **Tabs aren't a `ttk.Notebook`**: a Notebook is as tall as its tallest
   tab, which would keep the column long. `_show_tab` packs one frame of
   `self.tabs` and hides the others, so the column fits the tab shown.
